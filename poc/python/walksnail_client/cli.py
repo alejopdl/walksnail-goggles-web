@@ -62,7 +62,10 @@ def cmd_pull_all(c: WalksnailClient, args) -> int:
     rows = c.list_records(limit=args.limit)["rows"]
     print(f"downloading {len(rows)} clips -> {args.dest}/")
     for i, r in enumerate(rows, 1):
-        name = r["szFileName"]
+        # Sanitize filename to prevent directory traversal from a rogue AP
+        name = os.path.basename(r.get("szFileName", "").replace("\\", "/"))
+        if not name:
+            continue
         out = os.path.join(args.dest, name)
         if os.path.exists(out) and not args.overwrite:
             print(f"  [{i}/{len(rows)}] skip {name} (exists)")

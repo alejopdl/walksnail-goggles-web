@@ -352,10 +352,11 @@ async def api_download(filename: str, inline: bool = False):
                 yield chunk
 
     disposition = "inline" if inline else "attachment"
+    safe_filename = filename.replace('"', '').replace('\n', '').replace('\r', '')
     return StreamingResponse(
         _generate(),
         media_type="video/mp4",
-        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+        headers={"Content-Disposition": f'{disposition}; filename="{safe_filename}"'},
     )
 
 
@@ -446,9 +447,9 @@ def main() -> None:
         help="Web server port (default: 8080)"
     )
     parser.add_argument(
-        "--bind", default="0.0.0.0",
-        help="Bind address. Default 0.0.0.0 exposes to all devices on the LAN. "
-             "Use 127.0.0.1 for single-machine use."
+        "--bind", default="127.0.0.1",
+        help="Bind address. Default 127.0.0.1 limits access to this machine only. "
+             "Use 0.0.0.0 to expose the ground station to your entire LAN."
     )
     parser.add_argument(
         "--timeout", type=float, default=4.0,
