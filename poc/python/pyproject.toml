@@ -1,0 +1,43 @@
+[project]
+name = "walksnail-client"
+version = "0.1.0"
+description = "Cross-platform client for Walksnail Avatar HD Goggles X (reverse-engineered protocol)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Walksnail Goggles X RE project" }]
+keywords = ["walksnail", "fpv", "goggles", "rtsp", "ground-station", "drone"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video :: Capture",
+]
+# Control plane uses only the stdlib (urllib) — zero deps, works anywhere.
+dependencies = []
+
+[project.optional-dependencies]
+# Live view: RTSP decode + display. Install with:  pip install -e ".[video]"
+video = [
+    "av>=11.0",            # PyAV — FFmpeg bindings, decodes the H.264/RTSP feed
+    "numpy>=1.24",
+    "opencv-python>=4.8",  # window display (cv2.imshow)
+]
+# Browser ground station. Install with:  pip install -e ".[web]"
+web = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "av>=11.0",
+    "numpy>=1.24",
+    "opencv-python>=4.8",  # JPEG encoding for MJPEG stream
+]
+
+[project.scripts]
+walksnail     = "walksnail_client.cli:main"
+walksnail-web = "walksnail_client.web.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["walksnail_client*"]
