@@ -20,10 +20,20 @@ standard RTSP, so ports to other platforms are straightforward.
 - **Device control** — set clock, reboot, format SD, factory reset.
 - **Two front-ends** — a CLI (`walksnail`) and a browser **Web Ground Station**.
 
-## Hardware
-- Goggles: Walksnail Avatar HD **Goggles X** (tested on SW 39.44.15)
-- A linked air unit (e.g. Avatar Pro / Mini) for live video
+## Compatibility / tested on
+> [!WARNING]
+> This has only been **verified on the exact hardware and firmware we own**:
+> - Goggles: Walksnail Avatar HD **Goggles X**, firmware **39.44.15** (ISM2G4)
+> - Air unit: **Avatar Mini**, firmware **39.44.15**
+>
+> The goggles speak a generic LAN protocol (HTTP/JSON + standard H.264/RTSP), so
+> this very likely works on **other Walksnail Avatar HD goggles and firmware
+> versions** — but that is **unconfirmed**. Only what's listed above is known to
+> work. If you try it on different hardware/firmware, please open an issue with
+> your results (working or not) so we can grow the compatibility list.
+
 - Goggles Wi-Fi AP: SSID `Walksnail_XXXX`, default pass `12345678`, IP `192.168.42.1`
+- A linked air unit is required for **live video** (`vtx_connect == 1`).
 
 ## How it works
 The goggles expose an ordinary LAN protocol — no custom video transport:
