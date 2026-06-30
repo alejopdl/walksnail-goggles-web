@@ -12,14 +12,14 @@ Live video · Battery & signal telemetry · DVR recordings manager.
 ## What it looks like
 
 <!-- SCREENSHOT: Dashboard with live video, OSD overlay, and telemetry sidebar -->
-<!-- Replace this comment with: ![Dashboard](docs/screenshots/dashboard.png) -->
+![Dashboard](docs/screenshots/dashboard.png)
 
 *Live 1080p feed with OSD — voltage, temperature, bitrate and signal quality at a glance.*
 
 ---
 
 <!-- SCREENSHOT: DVR / recordings gallery -->
-<!-- Replace this comment with: ![Recordings](docs/screenshots/gallery.png) -->
+![Recordings](docs/screenshots/gallery.png)
 
 *Browse and download your DVR recordings directly from the goggles.*
 
