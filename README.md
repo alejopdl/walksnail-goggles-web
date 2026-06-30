@@ -1,96 +1,118 @@
-# Walksnail Goggles X — Open-Source Cross-Platform Client
+# 🚁 Walksnail Ground Station
 
-An **open-source client** for the Walksnail Avatar HD **Goggles X** — live view,
-telemetry, device control and DVR media management from any computer or browser,
-**no Android app required**. Python first; the protocol is plain HTTP/JSON +
-standard RTSP, so ports to other platforms are straightforward.
+**See your FPV feed on your computer. No app needed.**
 
-> [!IMPORTANT]
-> **Unofficial project. Not affiliated with, authorized, or endorsed by Caddx,
-> Walksnail, or any manufacturer.** "Walksnail", "Caddx" and "Avatar" are
-> trademarks of their respective owners and are used here only to describe the
-> hardware this software interoperates with. This is independent interoperability
-> work for hardware the authors own; it ships **no** vendor firmware, app, or
-> decompiled code. Use at your own risk.
+A free, open-source desktop app for Walksnail Avatar HD goggles.  
+Live video · Battery & signal telemetry · DVR recordings manager.
 
-## What you get
-- **Live video** — the goggles' H.264/RTSP feed, decoded with low latency.
-- **Telemetry** — battery, temperature, bitrate, MCS, SD space, link state.
-- **DVR media** — list, play, download (single/batch) and delete recorded clips.
-- **Device control** — set clock, reboot, format SD, factory reset.
-- **Two front-ends** — a CLI (`walksnail`) and a browser **Web Ground Station**.
+> Tested on **Goggles X + Avatar Mini** (firmware 39.44.15) · Not affiliated with Caddx or Walksnail
 
-## Compatibility / tested on
-> [!WARNING]
-> This has only been **verified on the exact hardware and firmware we own**:
-> - Goggles: Walksnail Avatar HD **Goggles X**, firmware **39.44.15** (ISM2G4)
-> - Air unit: **Avatar Mini**, firmware **39.44.15**
->
-> The goggles speak a generic LAN protocol (HTTP/JSON + standard H.264/RTSP), so
-> this very likely works on **other Walksnail Avatar HD goggles and firmware
-> versions** — but that is **unconfirmed**. Only what's listed above is known to
-> work. If you try it on different hardware/firmware, please open an issue with
-> your results (working or not) so we can grow the compatibility list.
+---
 
-- Goggles Wi-Fi AP: SSID `Walksnail_XXXX`, default pass `12345678`, IP `192.168.42.1`
-- A linked air unit is required for **live video** (`vtx_connect == 1`).
+## What it looks like
+
+<!-- SCREENSHOT: Dashboard with live video, OSD overlay, and telemetry sidebar -->
+<!-- Replace this comment with: ![Dashboard](docs/screenshots/dashboard.png) -->
+
+*Live 1080p feed with OSD — voltage, temperature, bitrate and signal quality at a glance.*
+
+---
+
+<!-- SCREENSHOT: DVR / recordings gallery -->
+<!-- Replace this comment with: ![Recordings](docs/screenshots/gallery.png) -->
+
+*Browse and download your DVR recordings directly from the goggles.*
+
+---
+
+## Download & Run
+
+### Mac
+
+1. Download **`WalksnailGS-mac.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+2. Unzip → double-click **`WalksnailGS.app`**
+3. First time only: right-click → **Open** → **Open** *(macOS security prompt)*
+
+### Windows
+
+1. Download **`WalksnailGS-win.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+2. Unzip anywhere → double-click **`WalksnailGS.exe`**
+3. First time only: click **"More info"** → **"Run anyway"** *(Windows security prompt)*
+
+> **Why the security warning?**  
+> The app isn't signed by Apple/Microsoft (that costs money). The full source code is right here for anyone to review.
+
+---
+
+## Before you start
+
+Connect your computer to the **goggles' WiFi network** — not your home WiFi.
+
+| WiFi name | Password |
+|---|---|
+| `Walksnail_XXXXXX` | `12345678` |
+
+Your computer won't have internet while connected to the goggles. That's normal.
+
+---
 
 ## How it works
-The goggles expose an ordinary LAN protocol — no custom video transport:
 
-- **Live video:** `rtsp://192.168.42.1/live.ch01` — H.264 High@4.0, 1920×1080,
-  60 fps, standard RTP/RTSP (also plays in VLC/ffplay).
-- **Control:** `POST http://192.168.42.1/ajaxcom`, body `szCmd=<JSON>`
-  (`version`, `devicestate`, `onlinequery`, `SysCtrl` actions).
-- **DVR:** list via `POST /querydata {"query_record":…}`, download
-  `GET /record/<file>.mp4`, delete via `SysCtrl/deletegasrecord`.
+1. **Power on** your goggles (drone optional — telemetry works without it)
+2. **Connect** your PC to the goggles WiFi
+3. **Open** the app → your browser opens automatically
+4. **Fly** — the app shows live video as soon as the drone is linked
 
-Full wire format in [PROTOCOL_SPEC.md](PROTOCOL_SPEC.md); every feature → command
-is inventoried in [FEATURE_MAP.md](FEATURE_MAP.md).
+### Video quality settings
 
-## Quick start (CLI)
-Join your computer to the goggles Wi-Fi (`Walksnail_XXXX` / `12345678`), then:
-```bash
-cd poc/python
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[video]"
-walksnail info            # versions / serials
-walksnail state           # telemetry (battery, temp, vtx_connect, bitrate)
-walksnail records         # list DVR clips
-walksnail live --osd      # live feed + telemetry overlay (q/ESC quit, s snapshot)
-```
-See [poc/python/README.md](poc/python/README.md).
+Click the ⚙️ gear icon (or press `,`) to adjust:
 
-## Web Ground Station
-A browser-based ground station (FastAPI + single-file SPA): live video, telemetry
-and media management from any device on the goggles' Wi-Fi. Full docs:
-[poc/python/WEB_README.md](poc/python/WEB_README.md).
+- **Resolution** — 1080p for best quality, 720p if the video stutters
+- **Quality** — lower if your WiFi connection is weak
+- **Transport** — TCP works best indoors; try UDP for lower latency outdoors
 
-```bash
-cd poc/python
-pip install -e ".[web]"
-walksnail-web                                # goggles at 192.168.42.1, UI on :8080
-walksnail-web --bind 127.0.0.1 --port 5080   # localhost only
-# open http://localhost:8080
-```
+### Keyboard shortcuts
 
-- **Live view** — MJPEG transcode of the RTSP feed, self-healing, TCP/UDP, quality/FPS/scale controls.
-- **Telemetry** — WebSocket push (battery, temp, bitrate sparkline, MCS, SD, distance) with adaptive colour thresholds.
-- **Media library** (`Media` button / `m`) — browse, play in-browser, download (single or batch), and delete the goggles' DVR clips. Opening it pauses the live stream so a light device isn't transcoding video and serving files at once.
-- **Recording status** — live REC indicators for goggles/air unit. Note: this firmware does **not** expose remote start/stop (see [FEATURE_MAP.md](FEATURE_MAP.md)); recording is toggled on the goggles.
-- **Polish** — responsive down to phone widths, hover tooltips on every metric, keyboard shortcuts (`O S F , R M`), hardened settings drawer, and a single-instance lock (the goggles' RTSP is single-session).
+| Key | Action |
+|---|---|
+| `O` | Show / hide OSD overlay |
+| `S` | Save a screenshot |
+| `F` | Fullscreen |
+| `R` | Reconnect if video drops |
 
-> [!NOTE]
-> The goggles serve the live RTSP feed to **one client at a time**. Close the
-> phone app's live view (and any `ffplay`) before connecting, or video won't appear.
+---
 
-## Tests
-```bash
-cd poc/python && pip install -e ".[web]"
-python -m pytest tests/ -q     # 46 hardware-free unit tests (protocol, REST/WS/MJPEG, SPA)
-```
+## FAQ
 
-## License
-[MIT](LICENSE) — covers the original code in this repository only. It grants no
-rights to the Caddx/Walksnail app, firmware, or trademarks. No vendor APK,
-firmware, or decompiled code is included or redistributed.
+**The video says "No VTX signal"**  
+→ The drone or air unit isn't powered on. Turn it on and it connects automatically.
+
+**It says "Offline"**  
+→ Check that your computer is connected to the goggles WiFi, not your home WiFi.
+
+**The video is laggy**  
+→ Lower the quality in settings (gear icon). Try 720p + 60% quality.
+
+**macOS says "unidentified developer"**  
+→ Right-click the app → Open → Open. You only need to do this once.
+
+---
+
+## Compatibility
+
+| Goggles | Air Unit | Firmware | Status |
+|---|---|---|---|
+| Goggles X | Avatar Mini | 39.44.15 | ✅ Tested |
+| Other Avatar HD models | — | — | ❓ Probably works |
+
+Tested it on a different model? [Open an issue](https://github.com/alejopdl/walksnail-goggles-web/issues) — it helps the whole community.
+
+---
+
+## For developers
+
+Want to run from source or contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) and [WEB_README.md](poc/python/WEB_README.md).
+
+---
+
+*MIT License · Not affiliated with Caddx or Walksnail*
