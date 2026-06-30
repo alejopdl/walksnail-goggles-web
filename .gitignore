@@ -1,0 +1,27 @@
+# Decompiled output and raw APK — do not commit / redistribute
+decompiled/
+captures/
+*.apk
+*.dex
+
+# Internal RE process notes & dev/research tooling — kept local, not published
+PHASE1_DECOMPILATION.md
+PHASE2_PROTOCOL_RE.md
+PHASE3_POC.md
+tools/
+poc/python/tests/test_integration_live.py
+poc/python/tests/test_webapp_verify.py
+.claude/
+
+# Python PoC
+poc/python/.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# OS / editor
+.DS_Store
+*.swp

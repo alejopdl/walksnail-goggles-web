@@ -1,0 +1,1773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Walksnail Ground Station</title>
+  <meta name="description" content="Browser-based ground station for Walksnail Avatar HD Goggles X" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Design Tokens ─────────────────────────────────────────────────── */
+    :root {
+      --bg:          #080b12;
+      --surface:     #0e1220;
+      --surface-2:   #141928;
+      --surface-3:   #1b2236;
+      --border:      rgba(255,255,255,0.06);
+      --border-hi:   rgba(255,255,255,0.12);
+      --accent:      #00e5c3;
+      --accent-dim:  #009e87;
+      --accent-glow: rgba(0,229,195,0.18);
+      --accent-text: #00ffda;
+      --red:         #f87171;
+      --red-dim:     #7f1d1d;
+      --yellow:      #fbbf24;
+      --green:       #4ade80;
+      --blue:        #60a5fa;
+      --purple:      #a78bfa;
+      --text-1:      #e2e8f4;
+      --text-2:      #7e8da5;
+      --text-3:      #3d4d63;
+      --mono:        'JetBrains Mono', monospace;
+      --sans:        'Inter', system-ui, sans-serif;
+      --radius:      10px;
+      --radius-sm:   6px;
+      --transition:  150ms cubic-bezier(0.4,0,0.2,1);
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text-1); font-family: var(--sans); font-size: 14px; line-height: 1.5; overflow: hidden; }
+    button { cursor: pointer; font-family: inherit; }
+    input, select { font-family: inherit; }
+    img { display: block; }
+
+    /* ── App Shell ─────────────────────────────────────────────────────── */
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    #header {
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 20px; height: 52px; flex-shrink: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+    .header-brand { display: flex; align-items: center; gap: 10px; }
+    .brand-logo { color: var(--accent); flex-shrink: 0; }
+    .brand-name { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: var(--text-1); }
+    .brand-sub { font-size: 11px; color: var(--text-2); margin-top: 1px; font-family: var(--mono); }
+    .header-sep { width: 1px; height: 24px; background: var(--border-hi); flex-shrink: 0; }
+    .header-device { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .dev-chip {
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 3px 8px; color: var(--text-2);
+      white-space: nowrap;
+    }
+    .dev-chip.live { color: var(--accent-text); border-color: var(--accent-dim); background: rgba(0,229,195,0.06); }
+    .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+    /* ── Connection badge ───────────────────────────────────────────────── */
+    .conn-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+      border: 1px solid transparent; white-space: nowrap;
+      transition: all var(--transition);
+    }
+    .conn-badge .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .conn-badge.live    { background: rgba(74,222,128,0.1);  border-color: rgba(74,222,128,0.3);  color: var(--green); }
+    .conn-badge.live .dot { background: var(--green); animation: pulse-green 2s infinite; }
+    .conn-badge.connecting { background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.3); color: var(--yellow); }
+    .conn-badge.connecting .dot { background: var(--yellow); animation: pulse-yellow 1s infinite; }
+    .conn-badge.error   { background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.3); color: var(--red); }
+    .conn-badge.error .dot { background: var(--red); }
+    .conn-badge.offline { background: var(--surface-2); border-color: var(--border); color: var(--text-3); }
+    .conn-badge.offline .dot { background: var(--text-3); }
+    .conn-badge.no-vtx  { background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.3); color: var(--purple); }
+    .conn-badge.no-vtx .dot { background: var(--purple); animation: pulse-purple 2.5s infinite; }
+
+    @keyframes pulse-green  { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.5)} 50%{box-shadow:0 0 0 6px rgba(74,222,128,0)} }
+    @keyframes pulse-yellow { 0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.6)} 50%{box-shadow:0 0 0 5px rgba(251,191,36,0)} }
+    @keyframes pulse-purple { 0%,100%{box-shadow:0 0 0 0 rgba(167,139,250,.5)} 50%{box-shadow:0 0 0 6px rgba(167,139,250,0)} }
+
+    /* ── Main Layout ────────────────────────────────────────────────────── */
+    #main { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+    /* ── Video Section ──────────────────────────────────────────────────── */
+    #video-section {
+      flex: 1; min-width: 0; display: flex; flex-direction: column;
+      background: #050709;
+    }
+    #video-wrapper {
+      flex: 1; position: relative; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #stream-img {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+      display: block; transition: opacity 0.3s;
+    }
+    #stream-img.faded { opacity: 0.3; }
+
+    /* ── Video State Overlays ───────────────────────────────────────────── */
+    #video-states {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    #video-states.hidden { opacity: 0; pointer-events: none; }
+    .vstate {
+      display: none; flex-direction: column; align-items: center; gap: 14px;
+      text-align: center; pointer-events: auto;
+    }
+    .vstate.active { display: flex; }
+    .vstate-icon { opacity: 0.7; }
+    .vstate-title { font-size: 18px; font-weight: 600; color: var(--text-1); }
+    .vstate-sub { font-size: 13px; color: var(--text-2); max-width: 280px; }
+    .vstate-error-msg {
+      font-family: var(--mono); font-size: 11px; color: var(--red);
+      background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2);
+      border-radius: var(--radius-sm); padding: 6px 12px; max-width: 380px;
+      word-break: break-word;
+    }
+    .spinner {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 3px solid var(--surface-3); border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn-retry {
+      margin-top: 6px; padding: 8px 20px;
+      background: rgba(248,113,113,0.15); border: 1px solid rgba(248,113,113,0.35);
+      color: var(--red); border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+      transition: all var(--transition);
+    }
+    .btn-retry:hover { background: rgba(248,113,113,0.25); }
+
+    /* ── OSD Overlay ────────────────────────────────────────────────────── */
+    #osd {
+      position: absolute; inset: 0; pointer-events: none;
+      padding: 14px 16px;
+      display: flex; flex-direction: column; justify-content: space-between;
+      transition: opacity 0.3s;
+    }
+    #osd.hidden { opacity: 0; }
+    .osd-row { display: flex; gap: 8px; }
+    .osd-row.right { justify-content: flex-end; }
+    .osd-chip {
+      font-family: var(--mono); font-size: 12px; font-weight: 500;
+      background: rgba(8,11,18,0.75); border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(4px); border-radius: 4px;
+      padding: 3px 8px; color: var(--text-1);
+      transition: color 0.3s, border-color 0.3s;
+      white-space: nowrap;
+    }
+    .osd-chip.green  { color: var(--green); border-color: rgba(74,222,128,0.2); }
+    .osd-chip.yellow { color: var(--yellow); border-color: rgba(251,191,36,0.2); }
+    .osd-chip.red    { color: var(--red); border-color: rgba(248,113,113,0.2); }
+    .osd-chip.rec    { color: var(--red); animation: blink 1s step-end infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    .osd-chip.hidden { display: none; }
+
+    /* ── Video Controls Bar ─────────────────────────────────────────────── */
+    #ctrl-bar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px; height: 44px;
+      background: linear-gradient(to top, rgba(5,7,9,0.9) 0%, transparent 100%);
+      opacity: 0; transition: opacity 0.2s;
+    }
+    #video-wrapper:hover #ctrl-bar { opacity: 1; }
+    .ctrl-group { display: flex; align-items: center; gap: 6px; }
+    .ctrl-btn {
+      width: 32px; height: 32px; border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text-1); display: flex; align-items: center; justify-content: center;
+      transition: all var(--transition); flex-shrink: 0;
+    }
+    .ctrl-btn:hover { background: rgba(255,255,255,0.15); color: var(--accent); }
+    .ctrl-btn.active { background: var(--accent-glow); border-color: var(--accent-dim); color: var(--accent); }
+    .ctrl-stats {
+      font-family: var(--mono); font-size: 11px; color: var(--text-2);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .ctrl-stats .sep { color: var(--text-3); }
+    .ctrl-stat-val { color: var(--text-1); font-weight: 500; }
+
+    /* ── Settings Drawer ────────────────────────────────────────────────── */
+    #settings-drawer {
+      position: absolute; bottom: 44px; right: 0; width: 300px;
+      background: var(--surface-2); border: 1px solid var(--border-hi);
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding: 16px;
+      /* Closed: fully off-screen AND invisible/inert so the header never peeks
+         above the controls bar (the bottom:44px anchor + translateY(100%) alone
+         leaves a sliver). */
+      transform: translateY(calc(100% + 52px)); opacity: 0; pointer-events: none;
+      transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease;
+      z-index: 20; box-shadow: 0 -8px 32px rgba(0,0,0,0.5);
+    }
+    #settings-drawer.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    .drawer-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .drawer-title { font-size: 13px; font-weight: 700; color: var(--text-1); letter-spacing: 0.5px; text-transform: uppercase; }
+    .drawer-close {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--surface-3); border: none; color: var(--text-2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; line-height: 1; transition: all var(--transition);
+    }
+    .drawer-close:hover { background: var(--surface-3); color: var(--text-1); }
+    .setting-row { margin-bottom: 14px; }
+    .setting-label {
+      font-size: 11px; font-weight: 600; color: var(--text-2);
+      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;
+    }
+    .pill-group { display: flex; gap: 4px; }
+    .pill {
+      flex: 1; padding: 6px; border-radius: var(--radius-sm); text-align: center;
+      font-size: 12px; font-weight: 600; border: 1px solid var(--border);
+      background: var(--surface-3); color: var(--text-2);
+      transition: all var(--transition);
+    }
+    .pill:hover { border-color: var(--border-hi); color: var(--text-1); }
+    .pill.active { background: var(--accent-glow); border-color: var(--accent-dim); color: var(--accent); }
+    .range-row { display: flex; align-items: center; gap: 10px; }
+    .range-row input[type=range] {
+      flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px;
+      background: var(--surface-3); outline: none;
+    }
+    .range-row input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px;
+      border-radius: 50%; background: var(--accent); cursor: pointer;
+      border: 2px solid var(--surface-2);
+    }
+    .range-val {
+      font-family: var(--mono); font-size: 12px; font-weight: 600;
+      color: var(--accent); min-width: 34px; text-align: right;
+    }
+    .drawer-select {
+      width: 100%; padding: 7px 10px; border-radius: var(--radius-sm);
+      background: var(--surface-3); border: 1px solid var(--border);
+      color: var(--text-1); font-size: 13px;
+    }
+    .drawer-select:focus { outline: 1px solid var(--accent-dim); }
+    .btn-apply {
+      width: 100%; padding: 9px; border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+      border: none; color: #000; font-size: 13px; font-weight: 700;
+      transition: all var(--transition); margin-top: 6px;
+    }
+    .btn-apply:hover { filter: brightness(1.1); }
+
+    /* ── Status Bar ─────────────────────────────────────────────────────── */
+    #status-bar {
+      display: flex; align-items: center; gap: 16px; padding: 0 14px; height: 32px;
+      background: var(--surface); border-top: 1px solid var(--border);
+      font-family: var(--mono); font-size: 11px; color: var(--text-2); flex-shrink: 0;
+    }
+    #status-bar .sb-item { display: flex; align-items: center; gap: 5px; }
+    #status-bar .sb-label { color: var(--text-3); }
+    #status-bar .sb-val { color: var(--text-1); }
+    #status-bar .sb-err { color: var(--red); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sb-sep { color: var(--text-3); }
+
+    /* ── Sidebar ────────────────────────────────────────────────────────── */
+    #sidebar {
+      width: 300px; flex-shrink: 0; overflow-y: auto;
+      background: var(--surface); border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 0;
+    }
+    #sidebar::-webkit-scrollbar { width: 4px; }
+    #sidebar::-webkit-scrollbar-track { background: transparent; }
+    #sidebar::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+
+    .sb-section { padding: 16px; border-bottom: 1px solid var(--border); }
+    .sb-section-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase; color: var(--text-3); margin-bottom: 12px;
+    }
+
+    /* ── Telemetry Cards ────────────────────────────────────────────────── */
+    .tele-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .tele-card {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 12px;
+      transition: border-color var(--transition);
+    }
+    .tele-card:hover { border-color: var(--border-hi); }
+    .tele-card.wide { grid-column: 1 / -1; }
+    .tele-label { font-size: 10px; color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .tele-val {
+      font-family: var(--mono); font-size: 18px; font-weight: 600;
+      color: var(--text-1); margin: 4px 0 6px; line-height: 1;
+      transition: color 0.3s;
+    }
+    .tele-val.green  { color: var(--green); }
+    .tele-val.yellow { color: var(--yellow); }
+    .tele-val.red    { color: var(--red); }
+    .tele-bar { height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+    .tele-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s, background 0.3s; }
+    .tele-bar-fill.green  { background: var(--green); }
+    .tele-bar-fill.yellow { background: var(--yellow); }
+    .tele-bar-fill.red    { background: var(--red); }
+    /* Bitrate sparkline */
+    #bitrate-chart { width: 100%; height: 36px; margin-top: 6px; }
+
+    /* ── VTX Status row ─────────────────────────────────────────────────── */
+    .vtx-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 8px 12px; margin-top: 8px;
+    }
+    .vtx-label { font-size: 11px; color: var(--text-2); }
+    .vtx-pill {
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+      background: rgba(74,222,128,0.1); color: var(--green); border: 1px solid rgba(74,222,128,0.25);
+    }
+    .vtx-pill.off { background: rgba(127,29,29,0.3); color: var(--red); border-color: rgba(248,113,113,0.2); }
+
+    /* ── Device Info ────────────────────────────────────────────────────── */
+    .info-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .info-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 8px;
+    }
+    .info-key { font-size: 11px; color: var(--text-2); flex-shrink: 0; }
+    .info-val { font-family: var(--mono); font-size: 11px; color: var(--text-1); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Quick Controls ─────────────────────────────────────────────────── */
+    .action-grid { display: flex; gap: 8px; flex-direction: column; }
+    .btn-action {
+      width: 100%; padding: 8px 12px; border-radius: var(--radius-sm);
+      background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text-1); font-size: 13px; font-weight: 500;
+      transition: all var(--transition); text-align: left;
+    }
+    .btn-action:hover { border-color: var(--accent-dim); color: var(--accent); }
+    .btn-action.danger { color: var(--red); }
+    .btn-action.danger:hover { border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.05); }
+
+    /* ── Toasts ─────────────────────────────────────────────────────────── */
+    #toasts {
+      position: fixed; bottom: 48px; right: 16px; z-index: 100;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+    }
+    .toast {
+      background: var(--surface-2); border: 1px solid var(--border-hi);
+      border-radius: var(--radius); padding: 10px 16px;
+      font-size: 13px; max-width: 320px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      animation: toastIn 0.2s ease; pointer-events: auto;
+    }
+    .toast.success { border-color: rgba(74,222,128,0.3); color: var(--green); }
+    .toast.error   { border-color: rgba(248,113,113,0.3); color: var(--red); }
+    .toast.info    { border-color: var(--accent-dim); color: var(--accent); }
+    @keyframes toastIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+    /* ── Header action buttons ──────────────────────────────────────────── */
+    .hdr-btn {
+      display: flex; align-items: center; gap: 6px;
+      height: 30px; padding: 0 12px; border-radius: var(--radius-sm);
+      background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text-1); font-size: 12px; font-weight: 600;
+      transition: all var(--transition); white-space: nowrap;
+    }
+    .hdr-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+    .hdr-btn svg { flex-shrink: 0; }
+    .hdr-btn .hdr-btn-label { }
+
+    /* ── Custom tooltip ─────────────────────────────────────────────────── */
+    #tooltip {
+      position: fixed; z-index: 200; pointer-events: none;
+      max-width: 260px; padding: 7px 10px;
+      background: rgba(10,14,24,0.97); border: 1px solid var(--border-hi);
+      border-radius: var(--radius-sm); color: var(--text-1);
+      font-size: 12px; line-height: 1.45; font-family: var(--sans);
+      box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+      opacity: 0; transform: translateY(3px);
+      transition: opacity 0.14s ease, transform 0.14s ease;
+    }
+    #tooltip.show { opacity: 1; transform: translateY(0); }
+    #tooltip .tip-title { font-weight: 700; color: var(--accent-text); display: block; margin-bottom: 2px; }
+    #tooltip .tip-body { color: var(--text-2); }
+    [data-tip] { cursor: help; }
+    .ctrl-btn[data-tip], .hdr-btn[data-tip], .pill[data-tip],
+    .btn-action[data-tip], .drawer-close[data-tip] { cursor: pointer; }
+
+    /* ── Settings backdrop ──────────────────────────────────────────────── */
+    #settings-backdrop {
+      position: absolute; inset: 0; z-index: 15;
+      background: transparent; display: none;
+    }
+    #settings-backdrop.open { display: block; }
+
+    /* ── REC status card ────────────────────────────────────────────────── */
+    .rec-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 8px 12px; margin-top: 8px;
+    }
+    .rec-row:first-child { margin-top: 0; }
+    .rec-label { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-2); }
+    .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+    .rec-dot.on { background: var(--red); animation: blink 1s step-end infinite; }
+    .rec-state { font-size: 11px; font-weight: 700; color: var(--text-3); }
+    .rec-state.on { color: var(--red); }
+
+    /* ── Media overlay ──────────────────────────────────────────────────── */
+    #media-overlay {
+      position: fixed; inset: 0; z-index: 80;
+      background: rgba(5,7,12,0.96); backdrop-filter: blur(2px);
+      display: none; flex-direction: column;
+    }
+    #media-overlay.open { display: flex; }
+    .media-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 0 18px; height: 56px; flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .media-title { font-size: 16px; font-weight: 700; color: var(--text-1); }
+    .media-sub { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+    .media-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .media-toolbar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .media-body { flex: 1; overflow-y: auto; padding: 8px 18px 18px; }
+    .media-body::-webkit-scrollbar { width: 8px; }
+    .media-body::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
+    .media-list { display: flex; flex-direction: column; gap: 6px; }
+    .media-item {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 10px 12px;
+      transition: border-color var(--transition);
+    }
+    .media-item:hover { border-color: var(--border-hi); }
+    .media-item.selected { border-color: var(--accent-dim); background: rgba(0,229,195,0.04); }
+    .media-check { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+    .media-icon { color: var(--text-3); flex-shrink: 0; }
+    .media-meta { flex: 1; min-width: 0; }
+    .media-name { font-family: var(--mono); font-size: 13px; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .media-sub2 { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    .media-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .media-btn {
+      height: 30px; padding: 0 10px; border-radius: var(--radius-sm);
+      background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text-1); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px;
+      transition: all var(--transition);
+    }
+    .media-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+    .media-btn.danger:hover { border-color: rgba(248,113,113,0.4); color: var(--red); background: rgba(248,113,113,0.05); }
+    .media-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .media-pager { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 0 4px; }
+    .media-pager .media-btn { min-width: 80px; justify-content: center; }
+    .media-pageinfo { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+    .media-empty { text-align: center; color: var(--text-2); padding: 60px 20px; }
+    .media-empty .media-empty-title { font-size: 15px; font-weight: 600; color: var(--text-1); margin-bottom: 6px; }
+    .media-player-wrap {
+      position: relative; margin-bottom: 10px; background: #000;
+      border: 1px solid var(--border-hi); border-radius: var(--radius); overflow: hidden;
+      display: none;
+    }
+    .media-player-wrap.open { display: block; }
+    .media-player-wrap video { width: 100%; max-height: 46vh; display: block; background: #000; }
+    .media-player-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface); }
+    .media-player-name { font-family: var(--mono); font-size: 12px; color: var(--text-1); flex: 1; }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      #main { flex-direction: column; }
+      #sidebar { width: 100%; height: auto; max-height: 42vh; border-left: none; border-top: 1px solid var(--border); }
+      .tele-grid { grid-template-columns: repeat(4, 1fr); }
+      .header-device { display: none; }
+    }
+    @media (max-width: 560px) {
+      html, body { font-size: 13px; }
+      #header { gap: 10px; padding: 0 12px; }
+      .header-sep { display: none; }
+      .hdr-btn .hdr-btn-label { display: none; }
+      .hdr-btn { padding: 0 9px; }
+      .tele-grid { grid-template-columns: repeat(2, 1fr); }
+      #settings-drawer { width: 100%; right: 0; left: 0; border-radius: var(--radius) var(--radius) 0 0; }
+      .osd-chip { font-size: 10px; padding: 2px 6px; }
+      #osd { padding: 8px 10px; }
+      .media-header { height: 48px; padding: 0 12px; }
+      .media-body { padding: 6px 10px 12px; }
+      .media-toolbar { padding: 8px 10px; }
+      .media-name { font-size: 12px; }
+      /* On touch, the hover-only control bar is always shown */
+      #ctrl-bar { opacity: 1; }
+    }
+    @media (hover: none) {
+      #ctrl-bar { opacity: 1; }
+      [data-tip] { cursor: default; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header id="header">
+    <div class="header-brand">
+      <svg class="brand-logo" width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <path d="M14 6L6 13h4v9h8v-9h4L14 6z" fill="currentColor" opacity="0.9"/>
+        <circle cx="14" cy="24" r="1.5" fill="currentColor" opacity="0.5"/>
+        <circle cx="6"  cy="13" r="1.5" fill="currentColor" opacity="0.4"/>
+        <circle cx="22" cy="13" r="1.5" fill="currentColor" opacity="0.4"/>
+      </svg>
+      <div>
+        <div class="brand-name">Walksnail GS</div>
+        <div class="brand-sub" id="hdr-host">192.168.42.1</div>
+      </div>
+    </div>
+    <div class="header-sep"></div>
+    <div class="header-device" id="hdr-device">
+      <span class="dev-chip" id="hdr-gsn" data-tip-title="Goggles serial" data-tip="Serial number of the connected Goggles X. Turns teal once the device responds.">Goggles —</span>
+      <span class="dev-chip" id="hdr-tsn" data-tip-title="Air unit serial" data-tip="Serial of the linked VTX / air unit. Shows dashes until a drone is bound to the goggles.">VTX —</span>
+      <span class="dev-chip" id="hdr-fw" data-tip-title="Goggles firmware" data-tip="Firmware version running on the goggles.">fw —</span>
+    </div>
+    <div class="header-actions">
+      <button class="hdr-btn" id="btn-media" onclick="openMedia()"
+              data-tip-title="Media library" data-tip="Browse, play, download and delete the clips recorded on the goggles SD card. Opening this pauses the live stream to keep the device light.">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+          <rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M6.5 6.2v3.6l3-1.8z" fill="currentColor"/>
+        </svg>
+        <span class="hdr-btn-label">Media</span>
+      </button>
+      <div class="conn-badge offline" id="conn-badge"
+           data-tip-title="Connection status" data-tip="Overall link state: LIVE (video flowing), No VTX (goggles online, drone off), Connecting, Error or Offline.">
+        <span class="dot"></span>
+        <span id="conn-label">Offline</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- Video section -->
+    <section id="video-section">
+      <div id="video-wrapper">
+
+        <!-- MJPEG image -->
+        <img id="stream-img" alt="Live feed"
+             onload="onStreamLoad()"
+             onerror="onStreamError()" />
+
+        <!-- State overlays -->
+        <div id="video-states">
+          <div class="vstate active" id="vs-connecting">
+            <div class="spinner"></div>
+            <div class="vstate-title">Connecting…</div>
+            <div class="vstate-sub" id="vs-connecting-sub">Starting RTSP stream</div>
+          </div>
+          <div class="vstate" id="vs-no-vtx">
+            <svg class="vstate-icon" width="64" height="64" viewBox="0 0 64 64" fill="none">
+              <path d="M32 12L14 28h8v22h20V28h8L32 12z" stroke="#7e8da5" stroke-width="2" fill="none"/>
+              <path d="M20 52h24M8 38l4 4M56 38l-4 4" stroke="#7e8da5" stroke-width="2" stroke-linecap="round"/>
+              <path d="M6 58l52-52" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div class="vstate-title">No VTX signal</div>
+            <div class="vstate-sub">Power on the drone / air unit to see live video</div>
+          </div>
+          <div class="vstate" id="vs-error">
+            <svg class="vstate-icon" width="56" height="56" viewBox="0 0 56 56" fill="none">
+              <circle cx="28" cy="28" r="24" stroke="#f87171" stroke-width="2"/>
+              <path d="M28 18v14M28 36v4" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+            <div class="vstate-title">Stream error</div>
+            <div class="vstate-error-msg" id="vs-error-msg">Unknown error</div>
+            <button class="btn-retry" id="btn-retry" onclick="retryStream()">↺ Retry Now</button>
+          </div>
+          <div class="vstate" id="vs-offline">
+            <svg class="vstate-icon" width="56" height="56" viewBox="0 0 56 56" fill="none">
+              <path d="M8 48 C12 38, 24 30, 28 30 C32 30, 44 38, 48 48" stroke="#3d4d63" stroke-width="2" stroke-linecap="round"/>
+              <path d="M16 38 C20 32, 24 30, 28 30 C32 30, 36 32, 40 38" stroke="#3d4d63" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="28" cy="44" r="3" fill="#3d4d63"/>
+              <path d="M6 10l44 44" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div class="vstate-title" style="color:var(--text-2)">Goggles offline</div>
+            <div class="vstate-sub">Cannot reach <span style="font-family:var(--mono)" id="vs-offline-host">192.168.42.1</span><br>Join the Walksnail Wi-Fi and retry</div>
+            <button class="btn-retry" style="border-color:rgba(255,255,255,0.15);color:var(--text-2)" onclick="retryAll()">↺ Retry connection</button>
+          </div>
+        </div>
+
+        <!-- OSD overlay -->
+        <div id="osd">
+          <div><!-- top row -->
+            <div class="osd-row" id="osd-top-left">
+              <span class="osd-chip" id="osd-bat-g" data-tip-title="Goggles battery" data-tip="Goggles pack voltage. Green ≥ ~23.5V, yellow mid, red near the 21V cut-off.">BAT –</span>
+              <span class="osd-chip" id="osd-bat-v" data-tip-title="Air unit battery" data-tip="VTX cell voltage (per-cell ~3.3–4.2V).">VTX –</span>
+              <span class="osd-chip" id="osd-temp-g" data-tip-title="Goggles temperature" data-tip="Goggles core temperature. Yellow > 50°C, red > 65°C.">–°C</span>
+            </div>
+          </div>
+          <div><!-- bottom row -->
+            <div class="osd-row" style="justify-content:space-between; align-items:flex-end">
+              <div class="osd-row" id="osd-bot-left">
+                <span class="osd-chip rec hidden" id="osd-rec-g" data-tip-title="Goggles recording" data-tip="The goggles SD recorder is running. Start/stop is done on the goggles, not remotely.">● REC GND</span>
+                <span class="osd-chip rec hidden" id="osd-rec-v" data-tip-title="Air unit recording" data-tip="The VTX onboard recorder is running.">● REC VTX</span>
+              </div>
+              <div class="osd-row right" id="osd-bot-right">
+                <span class="osd-chip" id="osd-mcs" data-tip-title="MCS index" data-tip="Modulation & coding scheme of the RF link (0–9). Higher = more throughput, needs a stronger signal.">MCS –</span>
+                <span class="osd-chip" id="osd-bitrate" data-tip-title="Video bitrate" data-tip="Live H.264 bitrate coming from the air unit.">– Mbps</span>
+                <span class="osd-chip" id="osd-sd" data-tip-title="Goggles SD free" data-tip="Free space remaining on the goggles SD card.">– GB</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings backdrop (click-outside to close) -->
+        <div id="settings-backdrop" onclick="closeSettings()"></div>
+
+        <!-- Controls bar (shown on hover) -->
+        <div id="ctrl-bar">
+          <div class="ctrl-group">
+            <button class="ctrl-btn" id="btn-osd" data-tip-title="Toggle OSD — O" data-tip="Show or hide the on-screen telemetry overlay (battery, temp, bitrate, REC)." onclick="toggleOSD()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3C4.5 3 1.5 5.5 1.5 8S4.5 13 8 13s6.5-2.5 6.5-5S11.5 3 8 3z" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="8" cy="8" r="2" fill="currentColor"/>
+              </svg>
+            </button>
+            <button class="ctrl-btn" id="btn-snap" data-tip-title="Snapshot — S" data-tip="Save the current frame as a JPG to your downloads." onclick="takeSnapshot()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="1.5" y="4.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="8" cy="9" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M6 4.5l.8-2h2.4l.8 2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="ctrl-stats">
+            <span class="sb-item"><span class="sb-label">FPS</span>&nbsp;<span class="ctrl-stat-val" id="ctrl-fps">–</span></span>
+            <span class="sep">·</span>
+            <span class="sb-item"><span class="ctrl-stat-val" id="ctrl-frames">0</span>&nbsp;<span class="sb-label">frames</span></span>
+            <span class="sep">·</span>
+            <span class="ctrl-stat-val" id="ctrl-transport">TCP</span>
+          </div>
+          <div class="ctrl-group">
+            <button class="ctrl-btn" id="btn-settings" data-tip-title="Stream settings — ," data-tip="Transport (TCP/UDP), resolution, JPEG quality and max FPS for the live feed." onclick="toggleSettings()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 3.2l-1.4 1.4M3.2 11.4l1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button class="ctrl-btn" id="btn-fs" data-tip-title="Fullscreen — F" data-tip="Expand the video section to fill the screen." onclick="toggleFullscreen()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Settings drawer -->
+        <div id="settings-drawer">
+          <div class="drawer-header">
+            <span class="drawer-title">Stream Settings</span>
+            <button class="drawer-close" onclick="closeSettings()" data-tip-title="Close" data-tip="Close settings (Esc).">✕</button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">Transport</div>
+            <div class="pill-group" id="pg-transport">
+              <button class="pill active" data-val="tcp" onclick="selectPill('pg-transport',this)">TCP</button>
+              <button class="pill" data-val="udp" onclick="selectPill('pg-transport',this)">UDP (lower latency)</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">Resolution</div>
+            <select class="drawer-select" id="sel-scale">
+              <option value="1.0">Full 1080p</option>
+              <option value="0.667">720p</option>
+              <option value="0.5">540p</option>
+              <option value="0.333">360p</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">JPEG Quality</div>
+            <div class="range-row">
+              <input type="range" id="sl-quality" min="20" max="95" value="82"
+                     oninput="document.getElementById('qval').textContent=this.value+'%'" />
+              <span class="range-val" id="qval">82%</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">Max FPS</div>
+            <div class="pill-group" id="pg-fps">
+              <button class="pill" data-val="15" onclick="selectPill('pg-fps',this)">15</button>
+              <button class="pill active" data-val="30" onclick="selectPill('pg-fps',this)">30</button>
+              <button class="pill" data-val="60" onclick="selectPill('pg-fps',this)">60</button>
+            </div>
+          </div>
+          <button class="btn-apply" onclick="applySettings()">↺ Apply &amp; Restart Stream</button>
+        </div>
+
+      </div><!-- /video-wrapper -->
+
+      <!-- Stream status bar -->
+      <div id="status-bar">
+        <span class="sb-item" data-tip-title="Stream state" data-tip="Whether the backend RTSP decoder thread is running or stopped."><span class="sb-label">Stream</span>&nbsp;<span class="sb-val" id="sb-state">–</span></span>
+        <span class="sb-sep">·</span>
+        <span class="sb-item" data-tip-title="Stream uptime" data-tip="How long the current RTSP decoder session has been running."><span class="sb-label">Uptime</span>&nbsp;<span class="sb-val" id="sb-uptime">–</span></span>
+        <span class="sb-sep">·</span>
+        <span class="sb-item" data-tip-title="Decoded frames" data-tip="Total frames decoded by the backend since the stream started — a steadily rising count means a healthy feed."><span class="sb-label">Reader</span>&nbsp;<span class="sb-val" id="sb-frames">–</span></span>
+        <span class="sb-sep">·</span>
+        <span class="sb-err" id="sb-error" data-tip-title="Last error" data-tip="Most recent decoder or network error, if any."></span>
+      </div>
+    </section>
+
+    <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
+    <aside id="sidebar">
+
+      <!-- Connection & VTX status -->
+      <div class="sb-section">
+        <div class="sb-section-title">Link status</div>
+        <div class="vtx-row" data-tip-title="Goggles link" data-tip="Whether the ground station can reach the goggles over Wi-Fi and is receiving telemetry.">
+          <span class="vtx-label">Goggles</span>
+          <span class="vtx-pill" id="lnk-goggles">–</span>
+        </div>
+        <div class="vtx-row" style="margin-top:6px" data-tip-title="Air unit link" data-tip="Whether a drone / VTX is bound to the goggles. No link means no live video is available.">
+          <span class="vtx-label">Air unit (VTX)</span>
+          <span class="vtx-pill off" id="lnk-vtx">No link</span>
+        </div>
+      </div>
+
+      <!-- Recording status -->
+      <div class="sb-section">
+        <div class="sb-section-title" data-tip-title="Recording" data-tip="This firmware does not allow starting or stopping recording remotely — toggle it on the goggles. Here you only see live status; use Media to manage saved clips.">Recording</div>
+        <div class="rec-row" data-tip-title="Goggles DVR" data-tip="Lights up red while the goggles are recording to their SD card. Controlled on the goggles, not from here.">
+          <span class="rec-label"><span class="rec-dot" id="rec-dot-g"></span>Goggles DVR</span>
+          <span class="rec-state" id="rec-state-g">Idle</span>
+        </div>
+        <div class="rec-row" data-tip-title="Air unit DVR" data-tip="Lights up red while the air unit is recording onboard.">
+          <span class="rec-label"><span class="rec-dot" id="rec-dot-v"></span>Air unit DVR</span>
+          <span class="rec-state" id="rec-state-v">Idle</span>
+        </div>
+        <div class="action-grid" style="margin-top:10px">
+          <button class="btn-action" onclick="openMedia()" data-tip-title="Open media library" data-tip="Browse, play, download and delete recorded clips. Pauses the live stream while open.">🎞 Manage Recordings…</button>
+        </div>
+      </div>
+
+      <!-- Telemetry cards -->
+      <div class="sb-section">
+        <div class="sb-section-title">Telemetry</div>
+        <div class="tele-grid">
+
+          <div class="tele-card" data-tip-title="Goggles battery" data-tip="Goggles pack voltage. Healthy ~21.0–25.2V (6S). Bar and colour reflect remaining charge.">
+            <div class="tele-label">Goggles Bat</div>
+            <div class="tele-val" id="t-bat-g">–</div>
+            <div class="tele-bar"><div class="tele-bar-fill green" id="bar-bat-g" style="width:0%"></div></div>
+          </div>
+          <div class="tele-card" data-tip-title="Air unit battery" data-tip="VTX cell voltage. Healthy ~3.3–4.2V per cell.">
+            <div class="tele-label">VTX Bat</div>
+            <div class="tele-val" id="t-bat-v">–</div>
+            <div class="tele-bar"><div class="tele-bar-fill green" id="bar-bat-v" style="width:0%"></div></div>
+          </div>
+
+          <div class="tele-card" data-tip-title="Goggles temperature" data-tip="Goggles core temp. Yellow > 55°C, red > 70°C.">
+            <div class="tele-label">Gog Temp</div>
+            <div class="tele-val" id="t-temp-g">–</div>
+          </div>
+          <div class="tele-card" data-tip-title="Air unit temperature" data-tip="VTX temp. Yellow > 55°C, red > 70°C. Ensure airflow on the bench.">
+            <div class="tele-label">VTX Temp</div>
+            <div class="tele-val" id="t-temp-v">–</div>
+          </div>
+
+          <div class="tele-card wide" data-tip-title="Video bitrate" data-tip="Live H.264 bitrate from the air unit, with a rolling 40-sample sparkline. Drops to 0 when no drone is linked.">
+            <div class="tele-label">Video Bitrate</div>
+            <div class="tele-val" id="t-bitrate" style="font-size:22px">–</div>
+            <canvas id="bitrate-chart"></canvas>
+          </div>
+
+          <div class="tele-card" data-tip-title="MCS index" data-tip="RF modulation & coding scheme (0–9). Higher carries more data but needs a stronger link.">
+            <div class="tele-label">MCS Index</div>
+            <div class="tele-val" id="t-mcs">–</div>
+          </div>
+          <div class="tele-card" data-tip-title="Distance" data-tip="Goggles-estimated distance to the air unit, in metres.">
+            <div class="tele-label">Distance</div>
+            <div class="tele-val" id="t-dist">–</div>
+          </div>
+
+          <div class="tele-card" data-tip-title="Goggles SD free" data-tip="Free space on the goggles SD card. Recorded clips live here — manage them from Media.">
+            <div class="tele-label">Gog SD Free</div>
+            <div class="tele-val" id="t-sd-g" style="font-size:15px">–</div>
+          </div>
+          <div class="tele-card" data-tip-title="Air unit SD free" data-tip="Free space on the air unit's SD card.">
+            <div class="tele-label">VTX SD Free</div>
+            <div class="tele-val" id="t-sd-v" style="font-size:15px">–</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Device info -->
+      <div class="sb-section">
+        <div class="sb-section-title">Device</div>
+        <div class="info-list">
+          <div class="info-row" data-tip-title="Goggles serial" data-tip="Hardware serial number of the goggles."><span class="info-key">Goggles SN</span> <span class="info-val" id="di-gsn">–</span></div>
+          <div class="info-row" data-tip-title="Goggles hardware" data-tip="Goggles hardware revision."><span class="info-key">Goggles HW</span> <span class="info-val" id="di-ghw">–</span></div>
+          <div class="info-row" data-tip-title="Goggles firmware" data-tip="Firmware version on the goggles."><span class="info-key">Goggles FW</span> <span class="info-val" id="di-gfw">–</span></div>
+          <div class="info-row" data-tip-title="Air unit serial" data-tip="Serial of the bound VTX. Dashes when no drone is linked."><span class="info-key">VTX SN</span>     <span class="info-val" id="di-vsn">–</span></div>
+          <div class="info-row" data-tip-title="Air unit hardware" data-tip="VTX hardware revision."><span class="info-key">VTX HW</span>     <span class="info-val" id="di-vhw">–</span></div>
+          <div class="info-row" data-tip-title="Air unit firmware" data-tip="VTX firmware version."><span class="info-key">VTX FW</span>     <span class="info-val" id="di-vfw">–</span></div>
+        </div>
+      </div>
+
+      <!-- Quick controls -->
+      <div class="sb-section">
+        <div class="sb-section-title">Controls</div>
+        <div class="action-grid">
+          <button class="btn-action" onclick="syncTime()" data-tip-title="Sync clock" data-tip="Set the goggles' internal clock to this computer's current time, so recording timestamps are correct.">⏱ Sync Goggles Clock</button>
+        </div>
+      </div>
+
+    </aside>
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ── Media library overlay ──────────────────────────────────────────────── -->
+<div id="media-overlay" role="dialog" aria-modal="true" aria-label="Media library">
+  <div class="media-header">
+    <span class="media-title">Media Library</span>
+    <span class="media-sub" id="media-count">—</span>
+    <div class="media-header-actions">
+      <button class="media-btn" id="media-refresh" onclick="loadMedia()" data-tip-title="Reload list" data-tip="Re-query the goggles for the current list of recorded clips.">↻ Refresh</button>
+      <button class="media-btn" onclick="closeMedia()" data-tip-title="Close — Esc" data-tip="Close the library and resume the live stream.">✕ Close</button>
+    </div>
+  </div>
+  <div class="media-toolbar">
+    <button class="media-btn" id="media-selall" onclick="mediaToggleSelectAll()" data-tip-title="Select page" data-tip="Select or clear every clip on this page.">☐ Select page</button>
+    <button class="media-btn danger" id="media-delsel" onclick="mediaDeleteSelected()" disabled data-tip-title="Delete selected" data-tip="Permanently delete the selected clips from the goggles SD card. Cannot be undone.">🗑 Delete selected</button>
+    <button class="media-btn" id="media-dlsel" onclick="mediaDownloadSelected()" disabled data-tip-title="Download selected" data-tip="Download the selected clips to this computer, one after another.">⤓ Download selected</button>
+    <span class="media-sub" id="media-selinfo" style="margin-left:auto"></span>
+  </div>
+  <div class="media-body">
+    <!-- Inline player (lazy) -->
+    <div class="media-player-wrap" id="media-player-wrap">
+      <video id="media-player" controls preload="none" playsinline></video>
+      <div class="media-player-bar">
+        <span class="media-player-name" id="media-player-name">—</span>
+        <button class="media-btn" onclick="mediaClosePlayer()" data-tip-title="Stop playback" data-tip="Close the inline player.">✕ Close player</button>
+      </div>
+    </div>
+
+    <div class="media-list" id="media-list"></div>
+
+    <div class="media-empty" id="media-empty" style="display:none">
+      <div class="media-empty-title" id="media-empty-title">No recordings</div>
+      <div id="media-empty-sub">This goggles SD card has no clips, or it could not be reached.</div>
+    </div>
+
+    <div class="media-pager" id="media-pager" style="display:none">
+      <button class="media-btn" id="media-prev" onclick="mediaPage(-1)">← Prev</button>
+      <span class="media-pageinfo" id="media-pageinfo">—</span>
+      <button class="media-btn" id="media-next" onclick="mediaPage(1)">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Floating tooltip -->
+<div id="tooltip"><span class="tip-title"></span><span class="tip-body"></span></div>
+
+<div id="toasts"></div>
+
+<script>
+"use strict";
+// ════════════════════════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════════════════════════
+const S = {
+  videoState: 'init',      // init | connecting | live | no-vtx | error | offline
+  osdVisible: true,
+  settingsOpen: false,
+  settings: { transport: 'tcp', scale: 1.0, quality: 82, fps: 30 },
+  retryCount: 0,
+  retryTimer: null,
+  staleTimer: null,
+  lastFrameCount: 0,
+  prevFrameCount: 0,
+  lastFpsSample: 0,
+  fpsDisplay: '–',
+  bitrateHistory: [],     // last 40 samples (Mbps)
+  telemetry: {},
+  ws: null,
+  wsRetryTimer: null,
+  statusPoll: null,
+  streamPaused: false,    // true while the Media library has the stream paused
+  // Media library
+  mediaOpen: false,
+  mediaRows: [],          // all records {szFileName, duration}
+  mediaPage: 0,
+  mediaPageSize: 60,
+  mediaSelected: new Set(),
+  mediaLoading: false,
+};
+
+// ════════════════════════════════════════════════════════════════
+//  Boot
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('hdr-host').textContent = location.hostname + (location.port ? ':'+location.port : '');
+  document.getElementById('vs-offline-host').textContent = location.hostname;
+
+  fetchDeviceInfo();
+  connectWS();
+  startStream();
+
+  // Poll stream status every 2s for FPS + health
+  S.statusPoll = setInterval(pollStreamStatus, 2000);
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', onKey);
+
+  // Tooltips
+  initTooltips();
+});
+
+// ════════════════════════════════════════════════════════════════
+//  Tooltip system (custom, delayed)
+// ════════════════════════════════════════════════════════════════
+function initTooltips() {
+  const tip = document.getElementById('tooltip');
+  const titleEl = tip.querySelector('.tip-title');
+  const bodyEl = tip.querySelector('.tip-body');
+  let showTimer = null, current = null;
+
+  // Hover delay before the tooltip appears (ms)
+  const DELAY = 450;
+
+  function place(target) {
+    const r = target.getBoundingClientRect();
+    tip.style.left = '0px'; tip.style.top = '0px';   // reset to measure
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = r.left + r.width / 2 - tw / 2;
+    let y = r.top - th - 8;                            // prefer above
+    if (y < 6) y = r.bottom + 8;                       // flip below if clipped
+    x = Math.max(6, Math.min(x, window.innerWidth - tw - 6));
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+
+  function show(target) {
+    const title = target.getAttribute('data-tip-title');
+    const body = target.getAttribute('data-tip');
+    if (!body && !title) return;
+    titleEl.textContent = title || '';
+    titleEl.style.display = title ? 'block' : 'none';
+    bodyEl.textContent = body || '';
+    tip.classList.add('show');
+    place(target);
+  }
+
+  function hide() {
+    clearTimeout(showTimer);
+    current = null;
+    tip.classList.remove('show');
+  }
+
+  document.addEventListener('pointerover', (e) => {
+    const t = e.target.closest('[data-tip], [data-tip-title]');
+    if (!t || t === current) return;
+    // Skip on touch (no real hover)
+    if (e.pointerType === 'touch') return;
+    current = t;
+    clearTimeout(showTimer);
+    showTimer = setTimeout(() => { if (current === t) show(t); }, DELAY);
+  });
+  document.addEventListener('pointerout', (e) => {
+    const t = e.target.closest('[data-tip], [data-tip-title]');
+    if (t && t === current) hide();
+  });
+  // Hide on scroll / click / leaving window so it never gets stuck
+  window.addEventListener('scroll', hide, true);
+  document.addEventListener('pointerdown', hide, true);
+  window.addEventListener('blur', hide);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Stream management
+// ════════════════════════════════════════════════════════════════
+function buildStreamUrl() {
+  const { transport, scale, quality, fps } = S.settings;
+  return `/video/stream?transport=${transport}&scale=${scale}&quality=${quality}&fps=${fps}&_t=${Date.now()}`;
+}
+
+function startStream() {
+  clearTimeout(S.retryTimer);
+  clearInterval(S.staleTimer);
+  S.lastFrameCount = 0; S.prevFrameCount = 0; S.lastFpsSample = 0;
+  setVideoState('connecting');
+  const img = document.getElementById('stream-img');
+  img.classList.add('faded');
+  img.src = buildStreamUrl();
+  document.getElementById('ctrl-transport').textContent = S.settings.transport.toUpperCase();
+}
+
+function pauseStream() {
+  // Stop the MJPEG transcode loop on the backend by dropping the connection.
+  // Used while the Media library is open so the device isn't decoding video
+  // and serving files at the same time (the goggles use one-shot HTTP).
+  S.streamPaused = true;
+  clearTimeout(S.retryTimer);
+  clearInterval(S.staleTimer);
+  const img = document.getElementById('stream-img');
+  img.removeAttribute('src');      // closes the multipart request
+  img.classList.add('faded');
+}
+
+function resumeStream() {
+  if (!S.streamPaused) return;
+  S.streamPaused = false;
+  S.retryCount = 0;
+  startStream();
+}
+
+function onStreamLoad() {
+  // First frame arrived
+  S.retryCount = 0;
+  document.getElementById('stream-img').classList.remove('faded');
+  // State is driven by telemetry (vtx_connect); default to 'live' until WS says otherwise
+  if (S.videoState === 'connecting' || S.videoState === 'error') {
+    setVideoState('live');
+  }
+  // Stale-frame detector: if frames_decoded doesn't increase for >5s, flag warning
+  clearInterval(S.staleTimer);
+  S.staleTimer = setInterval(() => {
+    if (S.lastFrameCount === S.prevFrameCount && S.videoState === 'live') {
+      document.getElementById('ctrl-fps').textContent = '0!';
+    }
+    S.prevFrameCount = S.lastFrameCount;
+  }, 5000);
+}
+
+function onStreamError() {
+  if (S.streamPaused) return;   // src was intentionally cleared by the Media view
+  clearInterval(S.staleTimer);
+  const delay = Math.min(600 * Math.pow(1.5, S.retryCount), 12000);
+  S.retryCount++;
+  setVideoState('error');
+  const msg = `Network error — retry #${S.retryCount} in ${(delay/1000).toFixed(1)}s`;
+  document.getElementById('vs-error-msg').textContent = msg;
+  document.getElementById('sb-error').textContent = msg;
+  S.retryTimer = setTimeout(startStream, delay);
+}
+
+function retryStream() {
+  clearTimeout(S.retryTimer);
+  S.retryCount = 0;
+  startStream();
+}
+
+function retryAll() {
+  S.retryCount = 0;
+  fetchDeviceInfo();
+  connectWS();
+  startStream();
+}
+
+async function pollStreamStatus() {
+  try {
+    const r = await fetch('/api/stream/status');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    // FPS computation
+    const now = Date.now();
+    if (S.lastFpsSample > 0) {
+      const elapsed = (now - S.lastFpsSample) / 1000;
+      const newFrames = d.frames_decoded - S.lastFrameCount;
+      S.fpsDisplay = newFrames > 0 ? (newFrames / elapsed).toFixed(1) : '0';
+      document.getElementById('ctrl-fps').textContent = S.fpsDisplay;
+    }
+    S.lastFpsSample = now;
+    S.lastFrameCount = d.frames_decoded;
+
+    document.getElementById('ctrl-frames').textContent = d.frames_decoded.toLocaleString();
+    document.getElementById('sb-frames').textContent = `${d.frames_decoded.toLocaleString()} decoded`;
+    document.getElementById('sb-uptime').textContent = d.uptime_s != null ? formatDuration(d.uptime_s) : '–';
+    document.getElementById('sb-state').textContent = d.running ? 'running' : 'stopped';
+
+    if (d.last_error) {
+      document.getElementById('sb-error').textContent = '⚠ ' + d.last_error;
+    } else {
+      document.getElementById('sb-error').textContent = '';
+    }
+  } catch { /* server may be temporarily unavailable */ }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Video state machine
+// ════════════════════════════════════════════════════════════════
+function setVideoState(state) {
+  S.videoState = state;
+  const states = ['connecting','no-vtx','error','offline'];
+  states.forEach(id => document.getElementById('vs-'+id).classList.remove('active'));
+
+  const badge = document.getElementById('conn-badge');
+  const label = document.getElementById('conn-label');
+  badge.className = 'conn-badge';
+
+  const statesDiv = document.getElementById('video-states');
+
+  if (state === 'live') {
+    statesDiv.classList.add('hidden');
+    badge.classList.add('live'); label.textContent = 'LIVE';
+  } else if (state === 'connecting') {
+    statesDiv.classList.remove('hidden');
+    document.getElementById('vs-connecting').classList.add('active');
+    badge.classList.add('connecting'); label.textContent = 'Connecting';
+  } else if (state === 'no-vtx') {
+    statesDiv.classList.remove('hidden');
+    document.getElementById('vs-no-vtx').classList.add('active');
+    badge.classList.add('no-vtx'); label.textContent = 'No VTX';
+  } else if (state === 'error') {
+    statesDiv.classList.remove('hidden');
+    document.getElementById('vs-error').classList.add('active');
+    badge.classList.add('error'); label.textContent = 'Error';
+  } else if (state === 'offline') {
+    statesDiv.classList.remove('hidden');
+    document.getElementById('vs-offline').classList.add('active');
+    badge.classList.add('offline'); label.textContent = 'Offline';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  WebSocket telemetry
+// ════════════════════════════════════════════════════════════════
+function connectWS() {
+  clearTimeout(S.wsRetryTimer);
+  if (S.ws) { try { S.ws.close(); } catch {} }
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  S.ws = new WebSocket(`${protocol}//${location.host}/ws/telemetry`);
+
+  S.ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'state') {
+        onTelemetry(msg.data);
+      } else if (msg.type === 'error') {
+        // Telemetry poll failed — likely goggles offline
+        handleOffline(msg.message);
+      }
+    } catch {}
+  };
+
+  S.ws.onerror = () => { /* close will follow */ };
+  S.ws.onclose = () => {
+    S.wsRetryTimer = setTimeout(connectWS, 3000);
+    handleOffline('WebSocket disconnected');
+  };
+}
+
+function handleOffline(reason) {
+  const lnk = document.getElementById('lnk-goggles');
+  lnk.textContent = 'Offline';
+  lnk.className = 'vtx-pill off';
+  const lnkV = document.getElementById('lnk-vtx');
+  lnkV.textContent = 'No link'; lnkV.className = 'vtx-pill off';
+  blankTelemetry();
+  if (S.videoState !== 'error' && S.videoState !== 'connecting') {
+    setVideoState('offline');
+  }
+}
+
+// Reset every telemetry surface to its neutral "no data" look so stale
+// values don't linger after the goggles drop off.
+function blankTelemetry() {
+  ['t-bat-g','t-bat-v','t-temp-g','t-temp-v','t-bitrate','t-mcs','t-dist','t-sd-g','t-sd-v']
+    .forEach(id => { const el = document.getElementById(id); if (el) { el.textContent = '–'; el.className = 'tele-val'; } });
+  ['bar-bat-g','bar-bat-v'].forEach(id => { const b = document.getElementById(id); if (b) { b.style.width = '0%'; b.className = 'tele-bar-fill'; } });
+  setRecState('rec-dot-g','rec-state-g', 0);
+  setRecState('rec-dot-v','rec-state-v', 0);
+  // OSD chips back to placeholders
+  setText('osd-mcs', 'MCS –'); setText('osd-bitrate', '–'); setText('osd-sd', '–');
+  const bg = document.getElementById('osd-bat-g'); if (bg){ bg.textContent='BAT –'; bg.className='osd-chip'; }
+  const bv = document.getElementById('osd-bat-v'); if (bv){ bv.textContent='VTX –'; bv.className='osd-chip'; }
+  const tg = document.getElementById('osd-temp-g'); if (tg){ tg.textContent='–°C'; tg.className='osd-chip'; }
+  document.getElementById('osd-rec-g').classList.add('hidden');
+  document.getElementById('osd-rec-v').classList.add('hidden');
+}
+
+function onTelemetry(data) {
+  S.telemetry = data;
+  const vtx = !!data.vtx_connect;
+
+  // Goggles link status
+  const lnkG = document.getElementById('lnk-goggles');
+  lnkG.textContent = 'Online'; lnkG.className = 'vtx-pill';
+
+  // VTX link
+  const lnkV = document.getElementById('lnk-vtx');
+  lnkV.textContent = vtx ? 'Linked' : 'No link';
+  lnkV.className = vtx ? 'vtx-pill' : 'vtx-pill off';
+
+  // Drive video state
+  if (S.videoState !== 'error') {
+    if (!vtx && S.videoState !== 'connecting') {
+      setVideoState('no-vtx');
+    } else if (vtx && (S.videoState === 'no-vtx' || S.videoState === 'connecting' || S.videoState === 'offline')) {
+      setVideoState('live');
+    } else if (S.videoState === 'offline' || S.videoState === 'init') {
+      setVideoState('connecting');
+    }
+  }
+
+  // ── Telemetry cards ──
+  const gv = data.gas_voltage;
+  const vv = data.vtx_voltage;
+  setVoltageTile('t-bat-g','bar-bat-g', gv, 21.0, 25.2);
+  setVoltageTile('t-bat-v','bar-bat-v', vv, 3.3, 4.2);
+
+  setTemp('t-temp-g', data.gas_tempeture);
+  setTemp('t-temp-v', data.vtx_tempeture);
+
+  const bpms = data.bitrate ? (data.bitrate / 1e6).toFixed(1) : '–';
+  setText('t-bitrate', bpms !== '–' ? bpms + ' Mbps' : '–');
+
+  setText('t-mcs', data.u8_mcs != null ? data.u8_mcs : '–');
+  setText('t-dist', data.distance != null ? data.distance + ' m' : '–');
+  setText('t-sd-g', data.gas_sd_space != null ? data.gas_sd_space + ' MB' : '–');
+  setText('t-sd-v', data.vtx_sd_space != null ? data.vtx_sd_space + ' MB' : '–');
+
+  // Bitrate history + sparkline
+  if (data.bitrate != null) {
+    const mbps = data.bitrate / 1e6;
+    S.bitrateHistory.push(mbps);
+    if (S.bitrateHistory.length > 40) S.bitrateHistory.shift();
+    drawSparkline('bitrate-chart', S.bitrateHistory, '#00e5c3');
+  }
+
+  // ── REC status card ──
+  setRecState('rec-dot-g', 'rec-state-g', data.gas_rec_state);
+  setRecState('rec-dot-v', 'rec-state-v', data.vtx_rec_state);
+
+  // ── OSD ──
+  updateOSD(data);
+}
+
+function setRecState(dotId, stateId, on) {
+  const dot = document.getElementById(dotId);
+  const st = document.getElementById(stateId);
+  if (!dot || !st) return;
+  dot.classList.toggle('on', !!on);
+  st.classList.toggle('on', !!on);
+  st.textContent = on ? 'Recording' : 'Idle';
+}
+
+// ════════════════════════════════════════════════════════════════
+//  OSD update
+// ════════════════════════════════════════════════════════════════
+function updateOSD(data) {
+  const gv = data.gas_voltage;
+  const vv = data.vtx_voltage;
+  const level = batLevel(gv, 21.0, 25.2);
+
+  const osdBatG = document.getElementById('osd-bat-g');
+  osdBatG.textContent = gv != null ? `BAT ${gv.toFixed(1)}V` : 'BAT –';
+  osdBatG.className = 'osd-chip ' + voltColor(level);
+
+  const osdBatV = document.getElementById('osd-bat-v');
+  osdBatV.textContent = vv != null ? `VTX ${vv.toFixed(2)}V` : 'VTX –';
+  const vlevel = batLevel(vv, 3.3, 4.2);
+  osdBatV.className = 'osd-chip ' + voltColor(vlevel);
+
+  const gt = data.gas_tempeture;
+  const osdT = document.getElementById('osd-temp-g');
+  osdT.textContent = gt != null ? `${gt}°C` : '–°C';
+  osdT.className = 'osd-chip ' + (gt > 65 ? 'red' : gt > 50 ? 'yellow' : '');
+
+  const bpms = data.bitrate ? (data.bitrate / 1e6).toFixed(1) : '–';
+  document.getElementById('osd-bitrate').textContent = bpms !== '–' ? `${bpms} Mbps` : '–';
+  document.getElementById('osd-mcs').textContent = data.u8_mcs != null ? `MCS ${data.u8_mcs}` : 'MCS –';
+
+  const gsd = data.gas_sd_space;
+  document.getElementById('osd-sd').textContent = gsd != null ? `${gsd} MB` : '–';
+
+  // Recording indicators
+  const recG = document.getElementById('osd-rec-g');
+  const recV = document.getElementById('osd-rec-v');
+  recG.classList.toggle('hidden', !data.gas_rec_state);
+  recV.classList.toggle('hidden', !data.vtx_rec_state);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Device info
+// ════════════════════════════════════════════════════════════════
+async function fetchDeviceInfo() {
+  try {
+    const r = await fetch('/api/info');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('hdr-gsn').textContent = d.goggles_sn || '–';
+    document.getElementById('hdr-tsn').textContent = d.tx_sn || '–';
+    document.getElementById('hdr-fw').textContent = 'fw ' + (d.goggles_sw || '–');
+    if (d.goggles_sn) document.getElementById('hdr-gsn').classList.add('live');
+    if (d.tx_sn && d.vtx_present) document.getElementById('hdr-tsn').classList.add('live');
+
+    setText('di-gsn', d.goggles_sn);
+    setText('di-ghw', d.goggles_hw);
+    setText('di-gfw', d.goggles_sw);
+    setText('di-vsn', d.tx_sn);
+    setText('di-vhw', d.tx_hw);
+    setText('di-vfw', d.tx_sw);
+  } catch { /* goggles offline */ }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Controls
+// ════════════════════════════════════════════════════════════════
+function toggleOSD() {
+  S.osdVisible = !S.osdVisible;
+  document.getElementById('osd').classList.toggle('hidden', !S.osdVisible);
+  document.getElementById('btn-osd').classList.toggle('active', S.osdVisible);
+}
+
+function takeSnapshot() {
+  const img = document.getElementById('stream-img');
+  if (!img.src || !img.naturalWidth) return;
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  c.getContext('2d').drawImage(img, 0, 0);
+  const a = document.createElement('a');
+  a.download = `walksnail_${new Date().toISOString().replace(/[:.]/g,'_')}.jpg`;
+  a.href = c.toDataURL('image/jpeg', 0.92);
+  a.click();
+  toast('Snapshot saved', 'success');
+}
+
+function toggleFullscreen() {
+  const el = document.getElementById('video-section');
+  if (!document.fullscreenElement) {
+    el.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+function setSettingsOpen(open) {
+  S.settingsOpen = open;
+  document.getElementById('settings-drawer').classList.toggle('open', open);
+  document.getElementById('settings-backdrop').classList.toggle('open', open);
+  document.getElementById('btn-settings').classList.toggle('active', open);
+}
+function openSettings()  { setSettingsOpen(true); }
+function closeSettings() { setSettingsOpen(false); }
+function toggleSettings() { setSettingsOpen(!S.settingsOpen); }
+
+function selectPill(groupId, btn) {
+  document.querySelectorAll(`#${groupId} .pill`).forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function applySettings() {
+  const transport = document.querySelector('#pg-transport .pill.active')?.dataset.val || 'tcp';
+  const fps       = parseInt(document.querySelector('#pg-fps .pill.active')?.dataset.val || '30');
+  const scale     = parseFloat(document.getElementById('sel-scale').value);
+  const quality   = parseInt(document.getElementById('sl-quality').value);
+  S.settings = { transport, fps, scale, quality };
+  closeSettings();
+  S.retryCount = 0;
+  startStream();
+  toast(`Stream restarted — ${transport.toUpperCase()} · ${quality}% · ${fps} fps`, 'info');
+}
+
+async function syncTime() {
+  try {
+    const r = await fetch('/api/settime', { method: 'POST' });
+    if (r.ok) toast('Goggles clock synced to server time', 'success');
+    else toast('settime failed: ' + (await r.text()), 'error');
+  } catch (e) { toast('Request failed: ' + e.message, 'error'); }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Media library (DVR clips)
+//  Opening pauses the live stream so the device isn't transcoding video
+//  and serving files at the same time (the goggles use one-shot HTTP).
+// ════════════════════════════════════════════════════════════════
+function openMedia() {
+  if (S.mediaOpen) return;
+  S.mediaOpen = true;
+  closeSettings();
+  pauseStream();
+  document.getElementById('media-overlay').classList.add('open');
+  loadMedia();
+}
+
+function closeMedia() {
+  if (!S.mediaOpen) return;
+  S.mediaOpen = false;
+  mediaClosePlayer();
+  document.getElementById('media-overlay').classList.remove('open');
+  resumeStream();
+}
+
+async function loadMedia() {
+  if (S.mediaLoading) return;
+  S.mediaLoading = true;
+  S.mediaSelected.clear();
+  const listEl = document.getElementById('media-list');
+  const emptyEl = document.getElementById('media-empty');
+  const pagerEl = document.getElementById('media-pager');
+  emptyEl.style.display = 'none';
+  pagerEl.style.display = 'none';
+  listEl.innerHTML = '<div class="media-empty">Loading recordings…</div>';
+  document.getElementById('media-refresh').disabled = true;
+  try {
+    // Request a high limit so we get every clip (the goggles report 'total'
+    // but default the page size; 562+ clips otherwise get truncated).
+    const r = await fetch('/api/records?start=0&limit=100000');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    S.mediaRows = Array.isArray(d.rows) ? d.rows.slice() : [];
+    // Newest first (filenames are sequential AvatarG####.mp4)
+    S.mediaRows.sort((a, b) => (b.szFileName || '').localeCompare(a.szFileName || ''));
+    S.mediaPage = 0;
+    document.getElementById('media-count').textContent =
+      `${S.mediaRows.length} clip${S.mediaRows.length === 1 ? '' : 's'}`;
+    renderMedia();
+  } catch (e) {
+    S.mediaRows = [];
+    listEl.innerHTML = '';
+    document.getElementById('media-empty-title').textContent = 'Could not load recordings';
+    document.getElementById('media-empty-sub').textContent =
+      'The goggles did not respond. Make sure they are reachable, then Refresh.';
+    emptyEl.style.display = 'block';
+    document.getElementById('media-count').textContent = '—';
+  } finally {
+    S.mediaLoading = false;
+    document.getElementById('media-refresh').disabled = false;
+    updateMediaSelectionUI();
+  }
+}
+
+function renderMedia() {
+  const listEl = document.getElementById('media-list');
+  const emptyEl = document.getElementById('media-empty');
+  const pagerEl = document.getElementById('media-pager');
+  listEl.innerHTML = '';
+
+  if (S.mediaRows.length === 0) {
+    document.getElementById('media-empty-title').textContent = 'No recordings';
+    document.getElementById('media-empty-sub').textContent =
+      'This goggles SD card has no clips yet. Recording is started on the goggles.';
+    emptyEl.style.display = 'block';
+    pagerEl.style.display = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  const pages = Math.ceil(S.mediaRows.length / S.mediaPageSize);
+  S.mediaPage = Math.max(0, Math.min(S.mediaPage, pages - 1));
+  const start = S.mediaPage * S.mediaPageSize;
+  const slice = S.mediaRows.slice(start, start + S.mediaPageSize);
+
+  const frag = document.createDocumentFragment();
+  for (const row of slice) {
+    frag.appendChild(mediaRowEl(row));
+  }
+  listEl.appendChild(frag);
+
+  // Pager
+  if (pages > 1) {
+    pagerEl.style.display = 'flex';
+    document.getElementById('media-pageinfo').textContent = `Page ${S.mediaPage + 1} / ${pages}`;
+    document.getElementById('media-prev').disabled = S.mediaPage === 0;
+    document.getElementById('media-next').disabled = S.mediaPage >= pages - 1;
+  } else {
+    pagerEl.style.display = 'none';
+  }
+  updateMediaSelectionUI();
+}
+
+function mediaRowEl(row) {
+  const name = row.szFileName || '(unnamed)';
+  const dur = row.duration != null ? formatClip(row.duration) : '—';
+  const el = document.createElement('div');
+  el.className = 'media-item' + (S.mediaSelected.has(name) ? ' selected' : '');
+  el.dataset.name = name;
+
+  const check = document.createElement('input');
+  check.type = 'checkbox'; check.className = 'media-check';
+  check.checked = S.mediaSelected.has(name);
+  check.onclick = () => mediaToggleSelect(name);
+
+  const icon = document.createElement('span');
+  icon.className = 'media-icon';
+  icon.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 8v4l3.2-2z" fill="currentColor"/></svg>';
+
+  const meta = document.createElement('div');
+  meta.className = 'media-meta';
+  const nm = document.createElement('div'); nm.className = 'media-name'; nm.textContent = name;
+  const sub = document.createElement('div'); sub.className = 'media-sub2'; sub.textContent = `${dur} · MP4`;
+  meta.appendChild(nm); meta.appendChild(sub);
+
+  const actions = document.createElement('div');
+  actions.className = 'media-actions';
+  const play = mkBtn('▶ Play', 'media-btn', () => mediaPlay(name));
+  play.setAttribute('data-tip-title', 'Play in browser');
+  play.setAttribute('data-tip', 'Stream this clip inline. The goggles have no seek support, so playback is from the start.');
+  const dl = mkBtn('⤓', 'media-btn', () => mediaDownload(name));
+  dl.setAttribute('data-tip-title', 'Download'); dl.setAttribute('data-tip', 'Save this clip to your computer.');
+  const del = mkBtn('🗑', 'media-btn danger', () => mediaDelete(name));
+  del.setAttribute('data-tip-title', 'Delete'); del.setAttribute('data-tip', 'Permanently delete this clip from the goggles SD card.');
+  actions.appendChild(play); actions.appendChild(dl); actions.appendChild(del);
+
+  el.appendChild(check); el.appendChild(icon); el.appendChild(meta); el.appendChild(actions);
+  return el;
+}
+
+function mkBtn(label, cls, onclick) {
+  const b = document.createElement('button');
+  b.className = cls; b.textContent = label; b.onclick = onclick;
+  return b;
+}
+
+function mediaPage(delta) {
+  S.mediaPage += delta;
+  renderMedia();
+  document.querySelector('.media-body').scrollTop = 0;
+}
+
+function mediaToggleSelect(name) {
+  if (S.mediaSelected.has(name)) S.mediaSelected.delete(name);
+  else S.mediaSelected.add(name);
+  const el = document.querySelector(`.media-item[data-name="${CSS.escape(name)}"]`);
+  if (el) {
+    el.classList.toggle('selected', S.mediaSelected.has(name));
+    const cb = el.querySelector('.media-check'); if (cb) cb.checked = S.mediaSelected.has(name);
+  }
+  updateMediaSelectionUI();
+}
+
+function mediaToggleSelectAll() {
+  const start = S.mediaPage * S.mediaPageSize;
+  const slice = S.mediaRows.slice(start, start + S.mediaPageSize);
+  const allSel = slice.every(r => S.mediaSelected.has(r.szFileName));
+  slice.forEach(r => allSel ? S.mediaSelected.delete(r.szFileName) : S.mediaSelected.add(r.szFileName));
+  renderMedia();
+}
+
+function updateMediaSelectionUI() {
+  const n = S.mediaSelected.size;
+  document.getElementById('media-delsel').disabled = n === 0;
+  document.getElementById('media-dlsel').disabled = n === 0;
+  document.getElementById('media-selinfo').textContent = n ? `${n} selected` : '';
+  const start = S.mediaPage * S.mediaPageSize;
+  const slice = S.mediaRows.slice(start, start + S.mediaPageSize);
+  const allSel = slice.length > 0 && slice.every(r => S.mediaSelected.has(r.szFileName));
+  document.getElementById('media-selall').textContent = allSel ? '☑ Clear page' : '☐ Select page';
+}
+
+function mediaDownload(name) {
+  // Force a download via a temporary link to the proxy endpoint
+  const a = document.createElement('a');
+  a.href = `/api/records/${encodeURIComponent(name)}/download`;
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast(`Downloading ${name}…`, 'info');
+}
+
+async function mediaDownloadSelected() {
+  const names = [...S.mediaSelected];
+  if (!names.length) return;
+  toast(`Downloading ${names.length} clip(s) sequentially…`, 'info');
+  for (const name of names) {
+    mediaDownload(name);
+    await sleep(800);   // stagger so the browser queues them, not all at once
+  }
+}
+
+async function mediaDelete(name) {
+  if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/records/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(await r.text());
+    S.mediaRows = S.mediaRows.filter(x => x.szFileName !== name);
+    S.mediaSelected.delete(name);
+    if (document.getElementById('media-player-name').textContent === name) mediaClosePlayer();
+    document.getElementById('media-count').textContent =
+      `${S.mediaRows.length} clip${S.mediaRows.length === 1 ? '' : 's'}`;
+    renderMedia();
+    toast(`Deleted ${name}`, 'success');
+  } catch (e) {
+    toast(`Delete failed: ${e.message}`, 'error');
+  }
+}
+
+async function mediaDeleteSelected() {
+  const names = [...S.mediaSelected];
+  if (!names.length) return;
+  if (!confirm(`Delete ${names.length} clip(s)? This cannot be undone.`)) return;
+  let ok = 0, fail = 0;
+  for (const name of names) {
+    try {
+      const r = await fetch(`/api/records/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error();
+      S.mediaRows = S.mediaRows.filter(x => x.szFileName !== name);
+      S.mediaSelected.delete(name);
+      ok++;
+    } catch { fail++; }
+  }
+  document.getElementById('media-count').textContent =
+    `${S.mediaRows.length} clip${S.mediaRows.length === 1 ? '' : 's'}`;
+  renderMedia();
+  toast(`Deleted ${ok} clip(s)${fail ? `, ${fail} failed` : ''}`, fail ? 'error' : 'success');
+}
+
+function mediaPlay(name) {
+  const wrap = document.getElementById('media-player-wrap');
+  const vid = document.getElementById('media-player');
+  document.getElementById('media-player-name').textContent = name;
+  vid.src = `/api/records/${encodeURIComponent(name)}/download?inline=1`;
+  wrap.classList.add('open');
+  vid.play().catch(() => {/* user can press play */});
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function mediaClosePlayer() {
+  const wrap = document.getElementById('media-player-wrap');
+  const vid = document.getElementById('media-player');
+  vid.pause(); vid.removeAttribute('src'); vid.load();
+  document.getElementById('media-player-name').textContent = '—';
+  wrap.classList.remove('open');
+}
+
+function formatClip(s) {
+  s = Math.floor(s);
+  const m = Math.floor(s / 60), sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ════════════════════════════════════════════════════════════════
+//  Helpers
+// ════════════════════════════════════════════════════════════════
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val != null ? val : '–';
+}
+
+function batLevel(v, lo, hi) {
+  if (v == null) return null;
+  return Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+}
+
+function voltColor(level) {
+  if (level == null) return '';
+  if (level > 0.5) return 'green';
+  if (level > 0.25) return 'yellow';
+  return 'red';
+}
+
+function setVoltageTile(valId, barId, v, lo, hi) {
+  const level = batLevel(v, lo, hi);
+  const el = document.getElementById(valId);
+  const bar = document.getElementById(barId);
+  if (!el || !bar) return;
+  el.textContent = v != null ? v.toFixed(2) + 'V' : '–';
+  if (level != null) {
+    const pct = (level * 100).toFixed(0);
+    bar.style.width = pct + '%';
+    const cls = voltColor(level);
+    el.className = 'tele-val ' + cls;
+    bar.className = 'tele-bar-fill ' + cls;
+  }
+}
+
+function setTemp(id, t) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = t != null ? t + '°C' : '–';
+  el.className = 'tele-val ' + (t > 70 ? 'red' : t > 55 ? 'yellow' : '');
+}
+
+function formatDuration(s) {
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return `${h}h${m.toString().padStart(2,'0')}m`;
+  if (m > 0) return `${m}m${sec.toString().padStart(2,'0')}s`;
+  return `${sec}s`;
+}
+
+// Canvas sparkline
+function drawSparkline(canvasId, data, color) {
+  const c = document.getElementById(canvasId);
+  if (!c) return;
+  const w = c.offsetWidth || 240, h = 36;
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  if (data.length < 2) return;
+
+  const max = Math.max(...data, 1);
+  const pts = data.map((v, i) => [
+    (i / (data.length - 1)) * w,
+    h - (v / max) * (h - 4) - 2
+  ]);
+
+  // Filled area
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, color + '55');
+  grad.addColorStop(1, color + '00');
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], h);
+  pts.forEach(([x,y]) => ctx.lineTo(x, y));
+  ctx.lineTo(pts[pts.length-1][0], h);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// Toast notifications
+function toast(msg, type = 'info', duration = 3500) {
+  const d = document.createElement('div');
+  d.className = `toast ${type}`;
+  d.textContent = msg;
+  document.getElementById('toasts').appendChild(d);
+  setTimeout(() => d.remove(), duration);
+}
+
+// Keyboard shortcuts
+function onKey(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+  // Escape always closes the topmost transient surface
+  if (e.key === 'Escape') {
+    if (S.mediaOpen) { closeMedia(); return; }
+    if (S.settingsOpen) { closeSettings(); return; }
+    return;
+  }
+
+  // When the media library is open, only 'm' (close) applies
+  if (S.mediaOpen) {
+    if (e.key.toLowerCase() === 'm') closeMedia();
+    return;
+  }
+
+  switch(e.key.toLowerCase()) {
+    case 'o': toggleOSD(); break;
+    case 's': takeSnapshot(); break;
+    case 'f': toggleFullscreen(); break;
+    case ',': toggleSettings(); break;
+    case 'r': retryStream(); break;
+    case 'm': openMedia(); break;
+  }
+}
+</script>
+</body>
+</html>
