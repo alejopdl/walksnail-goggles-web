@@ -11,7 +11,6 @@ PHASE3_POC.md
 tools/
 poc/python/tests/test_integration_live.py
 poc/python/tests/test_webapp_verify.py
-.claude/
 
 # Python PoC
 poc/python/.venv/
@@ -25,3 +24,7 @@ dist/
 # OS / editor
 .DS_Store
 *.swp
+
+# AI tooling (local only)
+.agents/
+.gemini/
