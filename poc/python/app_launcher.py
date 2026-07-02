@@ -70,6 +70,15 @@ def main() -> None:
     # ── 0. Windows multiprocessing support ───────────────────────────────────
     multiprocessing.freeze_support()
 
+    # Windows consoles often default to cp1252, which can't encode the banner's
+    # emoji / box-drawing characters and would crash on the first print. Force
+    # UTF-8 (with replacement) so the app never dies on output encoding.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     # ── 1. Parse args (fast — no heavy imports yet) ──────────────────────
     import argparse
 

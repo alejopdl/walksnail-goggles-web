@@ -139,6 +139,13 @@ def print_summary() -> None:
 
 
 def main() -> None:
+    # Windows CI/consoles default to cp1252 and choke on the ✓/emoji output.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="Build WS WiFi Stream standalone app")
     parser.add_argument("--clean", action="store_true", help="Delete dist/ build/ first")
     parser.add_argument("--zip", action="store_true", help="Create distributable zip")

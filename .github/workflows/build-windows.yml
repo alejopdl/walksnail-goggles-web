@@ -15,6 +15,9 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
     defaults:
       run:
         working-directory: poc/python
