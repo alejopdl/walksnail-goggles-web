@@ -1,4 +1,4 @@
-"""Live video for the Walksnail Goggles X.
+"""Live video for the FPV goggles.
 
 The feed is plain H.264-over-RTSP (``rtsp://<host>/live.ch01``), so PyAV (FFmpeg)
 decodes it with no custom parsing. Requires the ``[video]`` extra:
@@ -158,8 +158,8 @@ class _TelemetryPoller:
         return self
 
     def _run(self) -> None:
-        from .client import WalksnailClient
-        c = WalksnailClient(self.host, timeout=2.0)
+        from .client import WSClient
+        c = WSClient(self.host, timeout=2.0)
         while not self._stop.wait(self.interval):
             try:
                 self.state = c.get_device_state()
@@ -188,7 +188,7 @@ def _draw_osd(frame, state: dict) -> None:
                 (0, 255, 0), 1, cv2.LINE_AA)
 
 
-def play_url(url: str, *, window: str = "Walksnail DVR") -> None:
+def play_url(url: str, *, window: str = "WS DVR") -> None:
     """Play a recorded clip (URL or local path) at real speed.
 
     Unlike the live view this honours each frame's PTS so playback runs at the
@@ -229,7 +229,7 @@ def play_url(url: str, *, window: str = "Walksnail DVR") -> None:
         cv2.destroyAllWindows()
 
 
-def show_live(host: str = p.DEFAULT_HOST, *, window: str = "Walksnail Live",
+def show_live(host: str = p.DEFAULT_HOST, *, window: str = "WS Live",
               transport: str = "tcp", osd: bool = False) -> None:
     """Open a window and render the live feed (latest-frame, low latency).
 
@@ -258,7 +258,7 @@ def show_live(host: str = p.DEFAULT_HOST, *, window: str = "Walksnail Live",
             if key in (ord("q"), 27):
                 break
             if key == ord("s"):
-                fn = time.strftime("walksnail_%Y%m%d_%H%M%S.png")
+                fn = time.strftime("ws_%Y%m%d_%H%M%S.png")
                 cv2.imwrite(fn, frame)
                 print(f"  saved {fn}")
     finally:

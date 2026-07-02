@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from walksnail_client import protocol as p
-from walksnail_client.protocol import GogglesError, parse_response
+from ws_client import protocol as p
+from ws_client.protocol import GogglesError, parse_response
 
 
 def test_szcmd_encoding():

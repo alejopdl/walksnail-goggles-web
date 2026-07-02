@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build script for Walksnail Ground Station standalone app.
+Build script for WS WiFi Stream standalone app.
 
 Usage:
     python build.py              # build for current platform
@@ -8,10 +8,10 @@ Usage:
     python build.py --zip        # also create a distributable zip
 
 Output:
-    dist/WalksnailGS/            → folder (all platforms)
-    dist/WalksnailGS.app         → macOS app bundle (double-click to run)
-    dist/WalksnailGS-mac.zip     → macOS distributable
-    dist/WalksnailGS-win.zip     → Windows distributable
+    dist/WS-WiFi-Stream/            → folder (all platforms)
+    dist/WS-WiFi-Stream.app         → macOS app bundle (double-click to run)
+    dist/WS-WiFi-Stream-mac.zip     → macOS distributable
+    dist/WS-WiFi-Stream-win.zip     → Windows distributable
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def clean() -> None:
 
 def build() -> None:
     print(f"\n  Building for {platform.system()} ({platform.machine()})…")
-    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "walksnail.spec"],
+    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "wswifistream.spec"],
         cwd=ROOT)
 
 
@@ -54,17 +54,17 @@ def make_zip() -> None:
     system = platform.system().lower()
     arch = platform.machine().lower()
     tag = {"darwin": "mac", "windows": "win", "linux": "linux"}.get(system, system)
-    zip_name = f"WalksnailGS-{tag}-{arch}.zip"
+    zip_name = f"WS-WiFi-Stream-{tag}-{arch}.zip"
     zip_path = DIST / zip_name
 
     # What to zip depends on platform
     if system == "darwin":
-        source = DIST / "WalksnailGS.app"
+        source = DIST / "WS-WiFi-Stream.app"
         if not source.exists():
             print(f"  ⚠ {source} not found — zipping folder instead")
-            source = DIST / "WalksnailGS"
+            source = DIST / "WS-WiFi-Stream"
     else:
-        source = DIST / "WalksnailGS"
+        source = DIST / "WS-WiFi-Stream"
 
     print(f"\n  Creating {zip_name}…")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -84,11 +84,11 @@ def verify() -> None:
     """Quick sanity check — run the built binary with --help."""
     system = platform.system().lower()
     if system == "darwin":
-        exe = DIST / "WalksnailGS" / "WalksnailGS"
+        exe = DIST / "WS-WiFi-Stream" / "WS-WiFi-Stream"
     elif system == "windows":
-        exe = DIST / "WalksnailGS" / "WalksnailGS.exe"
+        exe = DIST / "WS-WiFi-Stream" / "WS-WiFi-Stream.exe"
     else:
-        exe = DIST / "WalksnailGS" / "WalksnailGS"
+        exe = DIST / "WS-WiFi-Stream" / "WS-WiFi-Stream"
 
     if not exe.exists():
         print(f"  ⚠ Executable not found at {exe}, skipping verify")
@@ -113,8 +113,8 @@ def print_summary() -> None:
     if system == "darwin":
         print("""
   macOS:
-    • dist/WalksnailGS.app  → drag to /Applications and open
-    • dist/WalksnailGS-mac-*.zip → share this file
+    • dist/WS-WiFi-Stream.app  → drag to /Applications and open
+    • dist/WS-WiFi-Stream-mac-*.zip → share this file
 
   First run on another Mac:
     If macOS says "unidentified developer":
@@ -123,8 +123,8 @@ def print_summary() -> None:
     elif system == "windows":
         print("""
   Windows:
-    • dist\\WalksnailGS\\WalksnailGS.exe → run directly
-    • dist\\WalksnailGS-win-*.zip → share this folder zipped
+    • dist\\WS-WiFi-Stream\\WS-WiFi-Stream.exe → run directly
+    • dist\\WS-WiFi-Stream-win-*.zip → share this folder zipped
 
   First run on another PC:
     Windows Defender may warn → "More info" → "Run anyway"
@@ -133,13 +133,13 @@ def print_summary() -> None:
     else:
         print("""
   Linux:
-    • dist/WalksnailGS/WalksnailGS → run directly
-    • chmod +x dist/WalksnailGS/WalksnailGS first if needed
+    • dist/WS-WiFi-Stream/WS-WiFi-Stream → run directly
+    • chmod +x dist/WS-WiFi-Stream/WS-WiFi-Stream first if needed
 """)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build Walksnail GS standalone app")
+    parser = argparse.ArgumentParser(description="Build WS WiFi Stream standalone app")
     parser.add_argument("--clean", action="store_true", help="Delete dist/ build/ first")
     parser.add_argument("--zip", action="store_true", help="Create distributable zip")
     parser.add_argument("--no-verify", action="store_true", help="Skip post-build verify")

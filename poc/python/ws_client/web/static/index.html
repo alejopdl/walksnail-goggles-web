@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Walksnail Ground Station</title>
-  <meta name="description" content="Browser-based ground station for Walksnail Avatar HD Goggles X" />
+  <title>WS WiFi Stream</title>
+  <meta name="description" content="Browser-based ground station for FPV goggles" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -524,7 +524,7 @@
         <circle cx="22" cy="13" r="1.5" fill="currentColor" opacity="0.4"/>
       </svg>
       <div>
-        <div class="brand-name">Walksnail GS</div>
+        <div class="brand-name">WS WiFi Stream</div>
         <div class="brand-sub" id="hdr-host">192.168.42.1</div>
       </div>
     </div>
@@ -596,7 +596,7 @@
               <path d="M6 10l44 44" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
             </svg>
             <div class="vstate-title" style="color:var(--text-2)">Goggles offline</div>
-            <div class="vstate-sub">Cannot reach <span style="font-family:var(--mono)" id="vs-offline-host">192.168.42.1</span><br>Join the Walksnail Wi-Fi and retry</div>
+            <div class="vstate-sub">Cannot reach <span style="font-family:var(--mono)" id="vs-offline-host">192.168.42.1</span><br>Join the goggles Wi-Fi and retry</div>
             <button class="btn-retry" style="border-color:rgba(255,255,255,0.15);color:var(--text-2)" onclick="retryAll()">↺ Retry connection</button>
           </div>
         </div>
@@ -1336,7 +1336,7 @@ function takeSnapshot() {
   c.width = img.naturalWidth; c.height = img.naturalHeight;
   c.getContext('2d').drawImage(img, 0, 0);
   const a = document.createElement('a');
-  a.download = `walksnail_${new Date().toISOString().replace(/[:.]/g,'_')}.jpg`;
+  a.download = `ws-wifi-stream_${new Date().toISOString().replace(/[:.]/g,'_')}.jpg`;
   a.href = c.toDataURL('image/jpeg', 0.92);
   a.click();
   toast('Snapshot saved', 'success');

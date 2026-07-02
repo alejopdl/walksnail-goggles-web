@@ -1,15 +1,15 @@
 """Minimal connection example — prints device info and telemetry.
 
-Run with your machine joined to the goggles Wi-Fi (Walksnail_XXXX):
+Run with your machine joined to the goggles Wi-Fi (the goggles Wi-Fi SSID):
 
     python examples/connect.py
 """
 
-from walksnail_client import WalksnailClient
+from ws_client import WSClient
 
 
 def main() -> None:
-    c = WalksnailClient()  # default host 192.168.42.1
+    c = WSClient()  # default host 192.168.42.1
     print("online:", c.online())
 
     info = c.get_version()

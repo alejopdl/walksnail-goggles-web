@@ -28,3 +28,9 @@ dist/
 # AI tooling (local only)
 .agents/
 .gemini/
+
+# Flutter mobile app lives in a separate location, not in this public repo
+walksnail_mobile/
+
+# Local planning doc
+PLAN.md

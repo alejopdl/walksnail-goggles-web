@@ -1,4 +1,4 @@
-"""Control-plane client for the Walksnail Goggles X.
+"""Control-plane client for the FPV goggles.
 
 Pure stdlib (urllib) so it runs anywhere with no dependencies. The device must
 be reachable on its Wi-Fi AP (default host 192.168.42.1).
@@ -30,10 +30,10 @@ class DeviceInfo:
         return bool(self.tx_sn) and set(self.tx_sn) != {"-"}
 
 
-class WalksnailClient:
+class WSClient:
     """Synchronous HTTP control client.
 
-    >>> c = WalksnailClient()
+    >>> c = WSClient()
     >>> c.get_version().goggles_sw
     '39.44.15'
     """

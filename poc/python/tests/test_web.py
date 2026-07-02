@@ -13,10 +13,10 @@ from fastapi.testclient import TestClient
 
 # We need to mock goggles I/O before importing the server module,
 # but FastAPI routes are already registered at import time. The approach:
-# patch the module-level helpers that create WalksnailClient / LatestFrameReader.
+# patch the module-level helpers that create WSClient / LatestFrameReader.
 
-from walksnail_client.web import server as srv
-from walksnail_client.client import DeviceInfo
+from ws_client.web import server as srv
+from ws_client.client import DeviceInfo
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -55,7 +55,7 @@ FAKE_RECORDS = {
 
 
 def _make_fake_client():
-    """Return a MagicMock that behaves like WalksnailClient."""
+    """Return a MagicMock that behaves like WSClient."""
     c = MagicMock()
     c.online.return_value = True
     c.get_version.return_value = DeviceInfo(
@@ -415,7 +415,7 @@ class TestStaticServing:
         r = client.get("/")
         assert r.status_code == 200
         assert "text/html" in r.headers["content-type"]
-        assert "Walksnail Ground Station" in r.text
+        assert "WS WiFi Stream" in r.text
 
     def test_index_contains_key_elements(self, client):
         r = client.get("/")

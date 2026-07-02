@@ -1,4 +1,4 @@
-"""Command-line entry point: ``walksnail <command>`` (or ``python -m walksnail_client``)."""
+"""Command-line entry point: ``ws <command>`` (or ``python -m ws_client``)."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ import json
 import sys
 
 from . import protocol as p
-from .client import WalksnailClient
+from .client import WSClient
 
 
 def _print_json(obj) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False))
 
 
-def cmd_info(c: WalksnailClient, args) -> int:
+def cmd_info(c: WSClient, args) -> int:
     info = c.get_version()
     _print_json(info.raw)
     print(f"\nGoggles SW {info.goggles_sw} (HW {info.goggles_hw}, SN {info.goggles_sn})")
@@ -22,7 +22,7 @@ def cmd_info(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_state(c: WalksnailClient, args) -> int:
+def cmd_state(c: WSClient, args) -> int:
     state = c.get_device_state()
     _print_json(state)
     print(f"\nvtx_connect={state.get('vtx_connect')}  "
@@ -31,7 +31,7 @@ def cmd_state(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_records(c: WalksnailClient, args) -> int:
+def cmd_records(c: WSClient, args) -> int:
     res = c.list_records(start=args.start, limit=args.limit)
     rows = res.get("rows", [])
     print(f"total={res.get('total')}  showing {len(rows)}")
@@ -40,7 +40,7 @@ def cmd_records(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_download(c: WalksnailClient, args) -> int:
+def cmd_download(c: WSClient, args) -> int:
     dest = args.dest or args.filename
     print(f"downloading {args.filename} -> {dest}")
     c.download_record(args.filename, dest)
@@ -48,7 +48,7 @@ def cmd_download(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_play(c: WalksnailClient, args) -> int:
+def cmd_play(c: WSClient, args) -> int:
     from .video import play_url
     target = args.filename if args.file else c.record_url(args.filename)
     print(f"playing {target}  (q/ESC quit, space pause)")
@@ -56,7 +56,7 @@ def cmd_play(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_pull_all(c: WalksnailClient, args) -> int:
+def cmd_pull_all(c: WSClient, args) -> int:
     import os
     os.makedirs(args.dest, exist_ok=True)
     rows = c.list_records(limit=args.limit)["rows"]
@@ -83,7 +83,7 @@ def _confirm(args, what: str) -> bool:
     return False
 
 
-def cmd_delete(c: WalksnailClient, args) -> int:
+def cmd_delete(c: WSClient, args) -> int:
     if not _confirm(args, f"delete {args.filename}"):
         return 2
     c.delete_record(args.filename)
@@ -91,13 +91,13 @@ def cmd_delete(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_settime(c: WalksnailClient, args) -> int:
+def cmd_settime(c: WSClient, args) -> int:
     c.set_time()
     print("goggles clock synced to local time")
     return 0
 
 
-def cmd_reboot(c: WalksnailClient, args) -> int:
+def cmd_reboot(c: WSClient, args) -> int:
     if not _confirm(args, "reboot the goggles"):
         return 2
     c.reboot()
@@ -105,7 +105,7 @@ def cmd_reboot(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_factory_reset(c: WalksnailClient, args) -> int:
+def cmd_factory_reset(c: WSClient, args) -> int:
     if not _confirm(args, "factory-reset the goggles"):
         return 2
     c.factory_reset()
@@ -113,7 +113,7 @@ def cmd_factory_reset(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_format(c: WalksnailClient, args) -> int:
+def cmd_format(c: WSClient, args) -> int:
     if not _confirm(args, f"format the {args.target} SD card"):
         return 2
     (c.format_vtx_sd if args.target == "vtx" else c.format_goggles_sd)()
@@ -121,11 +121,11 @@ def cmd_format(c: WalksnailClient, args) -> int:
     return 0
 
 
-def cmd_live(c: WalksnailClient, args) -> int:
+def cmd_live(c: WSClient, args) -> int:
     url = c.rtsp_url
     if not args.force:
         try:
-            probe = WalksnailClient(c.host, timeout=2.0)  # fast precheck
+            probe = WSClient(c.host, timeout=2.0)  # fast precheck
             if not probe.vtx_connected():
                 print("warning: vtx_connect=0 (no air unit) — the stream will be "
                       "empty. Power the drone/VTX, or pass --force.", file=sys.stderr)
@@ -140,7 +140,7 @@ def cmd_live(c: WalksnailClient, args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="walksnail", description=__doc__)
+    ap = argparse.ArgumentParser(prog="ws", description=__doc__)
     ap.add_argument("--host", default=p.DEFAULT_HOST, help="goggles IP (default 192.168.42.1)")
     ap.add_argument("--timeout", type=float, default=5.0)
     sub = ap.add_subparsers(dest="command", required=True)
@@ -201,7 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    client = WalksnailClient(args.host, timeout=args.timeout)
+    client = WSClient(args.host, timeout=args.timeout)
     try:
         return args.fn(client, args)
     except p.GogglesError as e:

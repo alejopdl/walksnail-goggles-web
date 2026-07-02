@@ -1,5 +1,5 @@
 """
-Walksnail Goggles X — Web Ground Station backend.
+FPV goggles — Web Ground Station backend.
 
 FastAPI server providing:
   • MJPEG live video stream from the goggles RTSP feed (latest-frame, self-healing)
@@ -9,9 +9,9 @@ FastAPI server providing:
 
 Usage:
     pip install -e ".[web]"
-    walksnail-web                           # goggles at 192.168.42.1, web on :8080
-    walksnail-web --host 127.0.0.1:18080   # adb tunnel mode
-    walksnail-web --bind 127.0.0.1          # localhost only (single-machine use)
+    ws-web                           # goggles at 192.168.42.1, web on :8080
+    ws-web --host 127.0.0.1:18080   # adb tunnel mode
+    ws-web --bind 127.0.0.1          # localhost only (single-machine use)
 """
 from __future__ import annotations
 
@@ -34,9 +34,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-from walksnail_client import protocol as p
-from walksnail_client.client import WalksnailClient
-from walksnail_client.video import LatestFrameReader
+from ws_client import protocol as p
+from ws_client.client import WSClient
+from ws_client.video import LatestFrameReader
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -50,7 +50,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 _goggles_host: str = p.DEFAULT_HOST      # goggles HTTP host (control/records/files)
 _rtsp_host: str = ""                      # goggles RTSP host; "" → fall back to _goggles_host
-_client: WalksnailClient | None = None   # HTTP control client (lazy)
+_client: WSClient | None = None   # HTTP control client (lazy)
 _client_timeout: float = 4.0             # per-request HTTP timeout (s); raise for tunnels
 
 _reader: LatestFrameReader | None = None  # background RTSP decoder thread
@@ -59,7 +59,7 @@ _current_transport: str = "tcp"           # "tcp" or "udp"
 _stream_start_time: float = 0.0           # monotonic timestamp for uptime calc
 
 
-def _get_client() -> WalksnailClient:
+def _get_client() -> WSClient:
     """Lazy-initialise and return the shared HTTP control client.
 
     Default 4s timeout — long enough for the goggles to respond over a Wi-Fi
@@ -69,7 +69,7 @@ def _get_client() -> WalksnailClient:
     """
     global _client
     if _client is None:
-        _client = WalksnailClient(_goggles_host, timeout=_client_timeout)
+        _client = WSClient(_goggles_host, timeout=_client_timeout)
     return _client
 
 
@@ -215,7 +215,7 @@ async def _mjpeg_gen(
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Walksnail Ground Station", docs_url=None, redoc_url=None)
+app = FastAPI(title="WS WiFi Stream", docs_url=None, redoc_url=None)
 
 
 # ── Video ------------------------------------------------------------------
@@ -381,8 +381,12 @@ async def ws_telemetry(ws: WebSocket):
 
 
 # ── Static SPA (must be mounted last) -------------------------------------
+# check_dir=False so importing this module never fails when STATIC_DIR isn't the
+# real location yet. In a frozen (PyInstaller) build the launcher patches
+# STATIC_DIR and re-mounts this route with the correct bundled path; in dev the
+# directory already exists next to this file.
 
-app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True, check_dir=False), name="static")
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +409,7 @@ def _acquire_single_instance_lock(host: str):
     except ImportError:  # pragma: no cover — non-POSIX
         return None
     key = hashlib.sha1(host.encode()).hexdigest()[:12]
-    lock_path = Path(tempfile.gettempdir()) / f"walksnail-web-{key}.lock"
+    lock_path = Path(tempfile.gettempdir()) / f"ws-web-{key}.lock"
     fh = open(lock_path, "a+")  # don't truncate — a loser must still read the PID
     try:
         fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -415,7 +419,7 @@ def _acquire_single_instance_lock(host: str):
         except OSError:
             prev = "another process"
         print(
-            f"\n  ✗ A Walksnail Ground Station is already running for {host}\n"
+            f"\n  ✗ A WS WiFi Stream is already running for {host}\n"
             f"    (held by PID {prev}; lockfile {lock_path}).\n"
             f"    Only one instance may stream a goggles at a time — the RTSP\n"
             f"    feed is single-session. Open the existing UI in your browser,\n"
@@ -429,13 +433,13 @@ def _acquire_single_instance_lock(host: str):
 
 
 def main() -> None:
-    """CLI entry point for ``walksnail-web``.
+    """CLI entry point for ``ws-web``.
 
     Parses --host, --port, --bind and starts the uvicorn server.
     Prints a startup banner with local and LAN URLs.
     """
     parser = argparse.ArgumentParser(
-        description="Walksnail Goggles X — Web Ground Station"
+        description="FPV goggles — Web Ground Station"
     )
     parser.add_argument(
         "--host", default=p.DEFAULT_HOST,
@@ -479,7 +483,7 @@ def main() -> None:
     _client_timeout = args.timeout
     _client = None  # lazy-created on first request
 
-    print(f"\n  🚁  Walksnail Ground Station")
+    print(f"\n  🚁  WS WiFi Stream")
     print(f"      Goggles → http://{args.host}")
     if args.rtsp_host:
         print(f"      RTSP    → rtsp://{args.rtsp_host}{p.RTSP_PATH}")

@@ -1,4 +1,4 @@
-"""Walksnail Goggles X protocol primitives.
+"""FPV goggles protocol primitives.
 
 Reverse-engineered (interoperability research) — see ../../PROTOCOL_SPEC.md.
 This module is pure: it builds request payloads and parses responses. No I/O,

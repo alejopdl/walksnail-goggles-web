@@ -1,4 +1,4 @@
-# Walksnail Ground Station — Guía de Instalación y Uso
+# WS WiFi Stream — Guía de Instalación y Uso
 
 > **Una sola descarga. Doble clic. Listo.**
 
@@ -28,8 +28,8 @@ Una aplicación de escritorio gratuita y no oficial que te permite ver el **vide
 
 ### macOS
 
-1. Descargá `WalksnailGS-mac.zip` de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
-2. Descomprimí el ZIP → aparece `WalksnailGS.app`
+1. Descargá `WS-WiFi-Stream-mac.zip` de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+2. Descomprimí el ZIP → aparece `WS-WiFi-Stream.app`
 3. **Primera vez:** click derecho → **Abrir** → **Abrir** (solo la primera vez — macOS advierte sobre apps sin firma de Apple)
 4. A partir de la segunda vez, doble clic directo
 
@@ -38,9 +38,9 @@ Una aplicación de escritorio gratuita y no oficial que te permite ver el **vide
 
 ### Windows
 
-1. Descargá `WalksnailGS-win.zip` de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
-2. Descomprimí el ZIP en una carpeta (ej. `C:\WalksnailGS\`)
-3. Abrí la carpeta y doble clic en **`WalksnailGS.exe`**
+1. Descargá `WS-WiFi-Stream-win.zip` de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+2. Descomprimí el ZIP en una carpeta (ej. `C:\WS-WiFi-Stream\`)
+3. Abrí la carpeta y doble clic en **`WS-WiFi-Stream.exe`**
 4. **Primera vez:** si Windows Defender advierte → click en **"Más información"** → **"Ejecutar de todas formas"**
 
 > **¿Por qué el aviso de Windows?**  
@@ -65,14 +65,14 @@ Las gafas crean su propia red WiFi cuando están encendidas.
 
 ### Paso 2 — Abrir la aplicación
 
-- **macOS:** Doble clic en `WalksnailGS.app`
-- **Windows:** Doble clic en `WalksnailGS.exe`
+- **macOS:** Doble clic en `WS-WiFi-Stream.app`
+- **Windows:** Doble clic en `WS-WiFi-Stream.exe`
 
 Aparece una ventana de terminal con esto:
 
 ```
   ╔══════════════════════════════════════════╗
-  ║   🚁  Walksnail Ground Station            ║
+  ║   🚁  WS WiFi Stream            ║
   ║   http://localhost:8080                  ║
   ║                                          ║
   ║   The app opened in your browser.        ║
@@ -94,7 +94,7 @@ El navegador se abre **automáticamente** con la interfaz.
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ 🚁 Walksnail GS │ AvatarX_079060 │ fw 39.44.15 │ ● LIVE │
+│ 🚁 WS WiFi Stream │ AvatarX_079060 │ fw 39.44.15 │ ● LIVE │
 ├─────────────────────────────────────┬───────────────┤
 │                                     │  Link Status  │
 │                                     │  ● Goggles    │
@@ -186,7 +186,7 @@ El navegador puede quedar abierto — simplemente cerrá la pestaña.
 
 ### macOS: "No se puede abrir porque es de un desarrollador no identificado"
 
-→ Click derecho sobre `WalksnailGS.app` → **Abrir** → **Abrir**  
+→ Click derecho sobre `WS-WiFi-Stream.app` → **Abrir** → **Abrir**  
 Solo necesitás hacerlo una vez.
 
 ### Windows: "Windows protegió tu PC"
@@ -207,10 +207,10 @@ Si ejecutás la app desde la terminal, podés pasar argumentos:
 
 ```bash
 # macOS:
-./WalksnailGS.app/Contents/MacOS/WalksnailGS --port 9999 --no-browser
+./WS-WiFi-Stream.app/Contents/MacOS/WS-WiFi-Stream --port 9999 --no-browser
 
 # Windows:
-WalksnailGS.exe --port 9999 --no-browser
+WS-WiFi-Stream.exe --port 9999 --no-browser
 
 # Opciones:
 #   --host 192.168.42.1    IP de las gafas (default)
@@ -220,7 +220,7 @@ WalksnailGS.exe --port 9999 --no-browser
 
 Para acceder desde otro dispositivo en la misma red (ej. tablet), abrí una terminal y usá:
 ```bash
-walksnail-web --port 8080    # modo Python directo, sin --bind (expone a la LAN)
+ws-web --port 8080    # modo Python directo, sin --bind (expone a la LAN)
 ```
 Luego en el otro dispositivo: `http://IP-DE-TU-PC:8080`
 
@@ -263,5 +263,5 @@ python build.py --zip
 
 ---
 
-*Walksnail Ground Station es software libre bajo licencia MIT.*  
+*WS WiFi Stream es software libre bajo licencia MIT.*  
 *No tiene afiliación con Caddx ni Walksnail.*

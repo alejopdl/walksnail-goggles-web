@@ -1,4 +1,4 @@
-# 🚁 Walksnail Ground Station
+# 🚁 WS WiFi Stream
 
 **See your FPV feed on your computer. No app needed.**
 
@@ -29,14 +29,14 @@ Live video · Battery & signal telemetry · DVR recordings manager.
 
 ### Mac
 
-1. Download **`WalksnailGS-mac.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
-2. Unzip → double-click **`WalksnailGS.app`**
+1. Download **`WS-WiFi-Stream-mac.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+2. Unzip → double-click **`WS-WiFi-Stream.app`**
 3. First time only: right-click → **Open** → **Open** *(macOS security prompt)*
 
 ### Windows
 
-1. Download **`WalksnailGS-win.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
-2. Unzip anywhere → double-click **`WalksnailGS.exe`**
+1. Download **`WS-WiFi-Stream-win.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+2. Unzip anywhere → double-click **`WS-WiFi-Stream.exe`**
 3. First time only: click **"More info"** → **"Run anyway"** *(Windows security prompt)*
 
 > **Why the security warning?**  
@@ -118,7 +118,12 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 | macOS (Intel) | ❓ Untested |
 | Linux / any OS (from source) | 🟡 Runs from source (Python) |
 
-There is also an **Android app** (APK in [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)) — ✅ tested on Android.
+### Mobile app
+
+| Platform | Status |
+|---|---|
+| **Android** | ✅ Available — download the APK from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases) |
+| **iOS** | 🚧 In progress |
 
 Tested on a different goggles model or OS? [Open an issue](https://github.com/alejopdl/walksnail-goggles-web/issues) — it helps the whole community.
 

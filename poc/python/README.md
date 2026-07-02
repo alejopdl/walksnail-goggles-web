@@ -47,14 +47,14 @@ All commands accept `--host` (default `192.168.42.1`) and `--timeout`.
 ### Library
 
 ```python
-from walksnail_client import WalksnailClient
-c = WalksnailClient()
+from ws_client import WSClient
+c = WSClient()
 print(c.get_version().goggles_sw)     # '39.44.15'
 print(c.get_device_state())           # telemetry dict
 for r in c.list_records(limit=10)["rows"]:
     print(r["szFileName"], r["duration"])
 
-from walksnail_client.video import live_frames, LatestFrameReader
+from ws_client.video import live_frames, LatestFrameReader
 
 # (a) simple sequential generator — good for recording/processing
 for frame in live_frames():               # numpy BGR frames
@@ -70,9 +70,9 @@ while True:
 
 ## Layout
 ```
-walksnail_client/
+ws_client/
   protocol.py   wire format: szCmd builders, endpoints, response parsing (pure)
-  client.py     WalksnailClient — HTTP control (urllib, zero deps)
+  client.py     WSClient — HTTP control (urllib, zero deps)
   video.py      RTSP live view via PyAV: live_frames, LatestFrameReader,
                 show_live (latest-frame + reconnect + optional OSD/snapshot)
   cli.py        `walksnail` command

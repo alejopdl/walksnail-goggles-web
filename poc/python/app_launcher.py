@@ -1,5 +1,5 @@
 """
-Walksnail Ground Station — Standalone launcher.
+WS WiFi Stream — Standalone launcher.
 
 Entry point for PyInstaller. Defers ALL server imports until after
 sys._MEIPASS is available, so static files are found correctly in
@@ -54,7 +54,7 @@ def _wait_for_server(port: int, timeout: float = 25.0) -> bool:
 def _print_banner(port: int) -> None:
     print(f"""
   ╔══════════════════════════════════════════╗
-  ║   🚁  Walksnail Ground Station            ║
+  ║   🚁  WS WiFi Stream            ║
   ║   http://localhost:{port:<5}                 ║
   ║                                          ║
   ║   The app opened in your browser.        ║
@@ -74,7 +74,7 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Walksnail Ground Station — web-based FPV goggles control"
+        description="WS WiFi Stream — web-based FPV goggles control"
     )
     parser.add_argument("--host", default="192.168.42.1",
                         help="Goggles IP (default: 192.168.42.1)")
@@ -90,7 +90,7 @@ def main() -> None:
     # ── 2. Patch server STATIC_DIR BEFORE importing server.py ────────────
     #       server.py mounts StaticFiles at module level — we must set the
     #       correct path before that code runs.
-    import walksnail_client.web.server as srv
+    import ws_client.web.server as srv
     srv.STATIC_DIR = static_dir
 
     # ── 3. Rebuild the FastAPI app's static mount with the correct path ───

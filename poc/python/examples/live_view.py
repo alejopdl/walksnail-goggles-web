@@ -4,12 +4,12 @@
     python examples/live_view.py
 """
 
-from walksnail_client import WalksnailClient
-from walksnail_client.video import show_live
+from ws_client import WSClient
+from ws_client.video import show_live
 
 
 def main() -> None:
-    c = WalksnailClient()
+    c = WSClient()
     if not c.vtx_connected():
         raise SystemExit("vtx_connect=0 — power the drone/VTX and link it first.")
     print("streaming", c.rtsp_url, "(press q or ESC to quit)")

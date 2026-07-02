@@ -1,22 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for Walksnail Ground Station.
+PyInstaller spec for WS WiFi Stream.
 
 Bundles:
   - FastAPI + uvicorn (web server)
   - PyAV + FFmpeg dylibs/DLLs (RTSP decode)
   - OpenCV + its FFmpeg dylibs (JPEG encode)
   - NumPy
-  - walksnail_client package
+  - ws_client package
   - web/static/ (SPA frontend)
 
 Build:
-    pyinstaller walksnail.spec
+    pyinstaller wswifistream.spec
 
 Output:
-    dist/WalksnailGS/          (folder with the app)
-    dist/WalksnailGS.app       (macOS — after building on Mac)
-    dist/WalksnailGS.exe       (Windows — after building on Windows)
+    dist/WS-WiFi-Stream/          (folder with the app)
+    dist/WS-WiFi-Stream.app       (macOS — after building on Mac)
+    dist/WS-WiFi-Stream.exe       (Windows — after building on Windows)
 """
 
 import os
@@ -77,7 +77,7 @@ HIDDEN = [
 datas = []
 
 # SPA frontend
-static_dir = Path("walksnail_client/web/static")
+static_dir = Path("ws_client/web/static")
 datas.append((str(static_dir), "static"))
 
 # av FFmpeg shared libraries (macOS: .dylibs, Windows: .dlls)
@@ -147,7 +147,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="WalksnailGS",
+    name="WS-WiFi-Stream",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -168,16 +168,16 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="WalksnailGS",
+    name="WS-WiFi-Stream",
 )
 
 # macOS: wrap in a .app bundle
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="WalksnailGS.app",
+        name="WS-WiFi-Stream.app",
         # icon="assets/icon.icns",
-        bundle_identifier="com.walksnail.groundstation",
+        bundle_identifier="com.wswifistream.desktop",
         info_plist={
             "CFBundleShortVersionString": "0.1.0",
             "CFBundleVersion": "0.1.0",

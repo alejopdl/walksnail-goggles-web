@@ -1,4 +1,4 @@
-# Walksnail Ground Station — Documentación del Proyecto Web
+# WS WiFi Stream — Documentación del Proyecto Web
 
 ## Visión General
 
@@ -53,7 +53,7 @@ graph LR
 ```
 poc/python/
 ├── pyproject.toml                    # Package config, deps, entry points
-├── walksnail_client/
+├── ws_client/
 │   ├── __init__.py
 │   ├── protocol.py                   # Wire format (pure, sin I/O)
 │   ├── client.py                     # HTTP control client (stdlib only)
@@ -74,7 +74,7 @@ poc/python/
 ## Módulos
 
 ### 1. `protocol.py` — Wire Format
-[protocol.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/walksnail_client/protocol.py)
+[protocol.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/protocol.py)
 
 Capa pura (sin I/O). Define el formato del protocolo HTTP de las gafas.
 
@@ -113,11 +113,11 @@ Capa pura (sin I/O). Define el formato del protocolo HTTP de las gafas.
 ---
 
 ### 2. `client.py` — HTTP Control Client
-[client.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/walksnail_client/client.py)
+[client.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/client.py)
 
 Cliente HTTP sincrónico. **Solo usa stdlib** (urllib) — cero dependencias.
 
-**Clase `WalksnailClient(host, timeout)`:**
+**Clase `WSClient(host, timeout)`:**
 
 | Método | Retorna | Descripción |
 |---|---|---|
@@ -142,7 +142,7 @@ Cliente HTTP sincrónico. **Solo usa stdlib** (urllib) — cero dependencias.
 ---
 
 ### 3. `video.py` — RTSP Decode & Display
-[video.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/walksnail_client/video.py)
+[video.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/video.py)
 
 Decodifica el stream H.264 de las gafas vía RTSP usando PyAV (FFmpeg).
 
@@ -176,7 +176,7 @@ El corazón del video en vivo. Decodifica en un thread de background y expone **
 ---
 
 ### 4. `web/server.py` — FastAPI Backend
-[server.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/walksnail_client/web/server.py)
+[server.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/web/server.py)
 
 Servidor web que conecta todo: video MJPEG, telemetría WebSocket, API REST.
 
@@ -208,10 +208,10 @@ Servidor web que conecta todo: video MJPEG, telemetría WebSocket, API REST.
 
 **Placeholder inteligente:** Cuando no hay frame (sin VTX, conectando, error), genera una imagen oscura con dot-grid y mensaje contextual. Usa cache para evitar re-renderizar.
 
-**CLI entry point `walksnail-web`:**
+**CLI entry point `ws-web`:**
 
 ```
-walksnail-web [--host HOST] [--port PORT] [--bind BIND]
+ws-web [--host HOST] [--port PORT] [--bind BIND]
 
   --host   IP de las gafas (default: 192.168.42.1)
   --port   Puerto del web server (default: 8080)
@@ -221,7 +221,7 @@ walksnail-web [--host HOST] [--port PORT] [--bind BIND]
 ---
 
 ### 5. `web/static/index.html` — Frontend SPA
-[index.html](file:///Users/pdl/Projects/Caddx%20APP/poc/python/walksnail_client/web/static/index.html)
+[index.html](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/web/static/index.html)
 
 Aplicación single-page con diseño dark premium. ~1160 líneas (HTML + CSS + JS en un solo archivo).
 
@@ -285,7 +285,7 @@ Aplicación single-page con diseño dark premium. ~1160 líneas (HTML + CSS + JS
 ---
 
 ### 6. `cli.py` — CLI
-[cli.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/walksnail_client/cli.py)
+[cli.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/cli.py)
 
 CLI completo: `walksnail <command> [options]`
 
@@ -344,7 +344,7 @@ pip install -e ".[web]"
 ### Modo directo (PC conectada al WiFi de las gafas)
 
 ```bash
-walksnail-web
+ws-web
 # Abrir http://localhost:8080
 ```
 
@@ -358,7 +358,7 @@ walksnail-web
 ### Solo localhost (evita prompt del firewall macOS)
 
 ```bash
-walksnail-web --bind 127.0.0.1 --port 5080
+ws-web --bind 127.0.0.1 --port 5080
 # Abrir http://localhost:5080
 ```
 
