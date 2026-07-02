@@ -98,20 +98,35 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 
 ---
 
-## Compatibility
+## Tested on
+
+### Goggles / hardware
 
 | Goggles | Air Unit | Firmware | Status |
 |---|---|---|---|
-| Goggles X | Avatar Mini | 39.44.15 | ✅ Tested |
-| Other Avatar HD models | — | — | ❓ Probably works |
+| **Goggles X** | **Avatar Mini** | **39.44.15** | ✅ Fully tested |
+| Other Avatar HD models | — | — | ❓ Probably works (untested) |
 
-Tested it on a different model? [Open an issue](https://github.com/alejopdl/walksnail-goggles-web/issues) — it helps the whole community.
+> This project was developed and verified specifically on **Goggles X + Avatar Mini (fw 39.44.15)**. Other Avatar HD hardware likely works because it shares the same protocol, but it hasn't been confirmed.
+
+### Operating systems
+
+| Platform | Status |
+|---|---|
+| **macOS (Apple Silicon)** | ✅ Tested |
+| **Windows** | 🟡 Build provided — community testing welcome |
+| macOS (Intel) | ❓ Untested |
+| Linux / any OS (from source) | 🟡 Runs from source (Python) |
+
+There is also an **Android app** (APK in [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)) — ✅ tested on Android.
+
+Tested on a different goggles model or OS? [Open an issue](https://github.com/alejopdl/walksnail-goggles-web/issues) — it helps the whole community.
 
 ---
 
 ## For developers
 
-Want to run from source or contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) and [WEB_README.md](poc/python/WEB_README.md).
+Want to run from source or contribute? See [WEB_README.md](poc/python/WEB_README.md).
 
 ---
 
