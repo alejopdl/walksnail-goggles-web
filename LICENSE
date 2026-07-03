@@ -25,6 +25,4 @@ SOFTWARE.
 NOTE ON SCOPE: This license covers the original source code in this repository
 (the cross-platform client, web ground station, tools, and documentation). It
 does NOT grant any rights to the CaddxFPV / Walksnail application, firmware, or
-trademarks. The reverse-engineered protocol details were obtained by observing
-network traffic on hardware the authors own, for interoperability purposes; no
-decompiled third-party code is included or redistributed.
+trademarks, and includes no third-party code.

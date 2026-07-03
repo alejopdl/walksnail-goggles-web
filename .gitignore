@@ -1,13 +1,11 @@
-# Decompiled output and raw APK — do not commit / redistribute
-decompiled/
+# Local-only binaries and captures — do not commit
+_local_refs/
 captures/
 *.apk
 *.dex
 
-# Internal RE process notes & dev/research tooling — kept local, not published
-PHASE1_DECOMPILATION.md
-PHASE2_PROTOCOL_RE.md
-PHASE3_POC.md
+# Local-only notes & dev tooling — not published
+PHASE*.md
 tools/
 poc/python/tests/test_integration_live.py
 poc/python/tests/test_webapp_verify.py

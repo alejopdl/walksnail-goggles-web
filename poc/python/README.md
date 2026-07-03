@@ -1,8 +1,7 @@
 # walksnail-client (Python PoC)
 
-Cross-platform client for the **Walksnail Avatar HD Goggles X**, talking the
-reverse-engineered LAN protocol (see [`../../PROTOCOL_SPEC.md`](../../PROTOCOL_SPEC.md)).
-Runs on macOS / Linux / Windows — no Android app required.
+Cross-platform client for the **Walksnail Avatar HD Goggles X**, talking their
+LAN protocol over WiFi. Runs on macOS / Linux / Windows — no Android app required.
 
 - **Control plane** (device info, telemetry, DVR listing/download): pure stdlib,
   zero dependencies.
@@ -92,5 +91,5 @@ on macOS** with low latency. `live` requires a linked air unit
 (`vtx_connect == 1`).
 
 ## Notes
-This is interoperability research on owned hardware. No decompiled code is used
-here — only the observed wire protocol.
+The client talks to the goggles over their local WiFi network (default host
+`192.168.42.1`).

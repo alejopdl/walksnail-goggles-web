@@ -1,7 +1,6 @@
 """ws_client — cross-platform client for FPV goggles.
 
-Reverse-engineered for interoperability (see ../../PROTOCOL_SPEC.md). The
-control plane is dependency-free; the live view needs the ``[video]`` extra.
+The control plane is dependency-free; the live view needs the ``[video]`` extra.
 """
 
 from .client import DeviceInfo, WSClient

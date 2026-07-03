@@ -1,8 +1,7 @@
 """FPV goggles protocol primitives.
 
-Reverse-engineered (interoperability research) — see ../../PROTOCOL_SPEC.md.
-This module is pure: it builds request payloads and parses responses. No I/O,
-no decompiled code — just the wire format learned from observing the protocol.
+This module is pure: it builds request payloads and parses responses. No I/O —
+just the goggles' JSON-over-HTTP wire format.
 
 Wire summary
 ------------

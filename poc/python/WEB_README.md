@@ -4,9 +4,6 @@
 
 Ground Station web para las gafas **Walksnail Avatar HD Goggles X** (Caddx). Provee video en vivo, telemetría y control desde cualquier navegador — sin instalar apps nativas.
 
-> [!IMPORTANT]
-> Todo el protocolo fue reverse-engineered por observación del tráfico HTTP/RTSP. No se usó código descompilado.
-
 ---
 
 ## Arquitectura
