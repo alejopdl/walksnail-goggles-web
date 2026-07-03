@@ -173,4 +173,4 @@ Want to run from source or contribute? See [WEB_README.md](poc/python/WEB_README
 
 ---
 
-*MIT License · Not affiliated with Caddx or Walksnail*
+*[MIT License](LICENSE) · Unofficial — not affiliated with Caddx or Walksnail ([trademarks](TRADEMARKS.md))*
