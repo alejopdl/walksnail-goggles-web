@@ -931,6 +931,7 @@ const S = {
   framesAtLastPoll: 0,    // frames_decoded at the previous status poll
   uiReachable: false,     // whether telemetry currently reaches the goggles
   streamPaused: false,    // true while the Media library has the stream paused
+  settling: false,        // true during the 3s transport-switch settle countdown
   // Media library
   mediaOpen: false,
   mediaRows: [],          // all records {szFileName, duration}
@@ -1081,6 +1082,7 @@ function onStreamLoad() {
 
 function onStreamError() {
   if (S.streamPaused) return;   // src was intentionally cleared by the Media view
+  if (S.settling) return;       // src was intentionally cleared during settle countdown
   clearInterval(S.staleTimer);
   const delay = Math.min(600 * Math.pow(1.5, S.retryCount), 12000);
   S.retryCount++;
@@ -1154,6 +1156,7 @@ function videoFlowing() {
 // back to the most informative non-live state. Called every status poll.
 function reconcileVideoBadge() {
   if (S.streamPaused) return;             // Media view stopped the stream on purpose
+  if (S.settling) return;                 // countdown in progress — don't override
   if (S.videoState === 'error') return;   // the <img> error path owns that state
   if (videoFlowing()) {
     if (S.videoState !== 'live') setVideoState('live');
@@ -1496,9 +1499,13 @@ function startStreamWithSettle() {
   const btn = document.getElementById('btn-apply');
   if (btn) btn.disabled = true;
 
-  // Stop current stream src so the MJPEG connection drops immediately.
+  // Stop current stream — use removeAttribute so onerror doesn't fire.
+  S.settling = true;
+  clearTimeout(S.retryTimer);       // cancel any pending auto-retry
+  clearInterval(S.staleTimer);
   const img = document.getElementById('stream-img');
-  img.src = '';
+  img.removeAttribute('src');       // closes MJPEG without triggering onerror
+  img.classList.add('faded');
 
   // Show the settling state.
   let count = SETTLE_DELAY_S;
@@ -1513,6 +1520,7 @@ function startStreamWithSettle() {
       clearInterval(_settleInterval);
       _settleInterval = null;
       if (btn) btn.disabled = false;
+      S.settling = false;           // release the guard
       // Now safe to reconnect.
       startStream();
       const { transport, quality, fps } = S.settings;
