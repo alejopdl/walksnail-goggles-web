@@ -608,6 +608,17 @@
             <div class="vstate-sub">Cannot reach <span style="font-family:var(--mono)" id="vs-offline-host">192.168.42.1</span><br>Join the goggles Wi-Fi and retry</div>
             <button class="btn-retry" style="border-color:rgba(255,255,255,0.15);color:var(--text-2)" onclick="retryAll()">↺ Retry connection</button>
           </div>
+          <div class="vstate" id="vs-settling">
+            <svg class="vstate-icon" width="56" height="56" viewBox="0 0 56 56" fill="none">
+              <!-- hourglass -->
+              <path d="M18 8h20M18 48h20" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/>
+              <path d="M20 8C20 8 20 22 28 28C36 34 36 48 36 48H20C20 48 20 34 28 28C36 22 36 8 20 8z" fill="rgba(251,191,36,0.12)" stroke="#fbbf24" stroke-width="1.5"/>
+              <path d="M36 8C36 8 36 22 28 28C20 34 20 48 20 48H36C36 48 36 34 28 28C20 22 20 8 36 8z" fill="rgba(251,191,36,0.06)" stroke="#fbbf24" stroke-width="1.5"/>
+            </svg>
+            <div class="vstate-title" style="color:var(--yellow)">Closing old session…</div>
+            <div class="vstate-sub">The goggles support only one video session at a time.<br>Waiting before reconnecting with new transport.</div>
+            <div id="vs-settle-count" style="font-family:var(--mono);font-size:48px;font-weight:700;color:var(--yellow);line-height:1;margin-top:8px">3</div>
+          </div>
         </div>
 
         <!-- OSD overlay -->
@@ -686,6 +697,7 @@
             These tune the video sent to <b>your browser</b> (bandwidth / CPU) — not the
             goggles. The real capture resolution &amp; bitrate are set in the goggles' own menu.
           </div>
+          <!-- Transport -->
           <div class="setting-row">
             <div class="setting-label">Transport</div>
             <div class="pill-group" id="pg-transport">
@@ -694,8 +706,8 @@
             </div>
           </div>
           <div style="font-size:11px;opacity:.55;line-height:1.4;margin:-4px 0 12px">
-            TCP = stable, clean image (recommended). UDP = smoother on weak Wi-Fi but can show
-            artifacts. Latency is similar on a good link.
+            <b>TCP</b> = stable, clean image (recommended). <b>UDP</b> = lower latency on a weak link, may show artifacts.
+            Switching transport takes ~3 s while the goggles release the previous session.
           </div>
           <div class="setting-row">
             <div class="setting-label">JPEG Quality</div>
@@ -719,7 +731,7 @@
           <div style="font-size:11px;opacity:.55;line-height:1.4;margin:-4px 0 12px">
             Caps how many frames/sec are pushed to your browser (throttle for weak links).
           </div>
-          <button class="btn-apply" onclick="applySettings()">↺ Apply</button>
+          <button class="btn-apply" id="btn-apply" onclick="applySettings()">↺ Apply</button>
         </div>
 
       </div><!-- /video-wrapper -->
@@ -1012,6 +1024,9 @@ function initTooltips() {
 // ════════════════════════════════════════════════════════════════
 //  Stream management
 // ════════════════════════════════════════════════════════════════
+const SETTLE_DELAY_S = 3; // seconds to wait after tearing down RTSP before reconnecting
+let _settleInterval = null;
+
 function buildStreamUrl() {
   const { transport, scale, quality, fps } = S.settings;
   return `/video/stream?transport=${transport}&scale=${scale}&quality=${quality}&fps=${fps}&_t=${Date.now()}`;
@@ -1159,7 +1174,7 @@ function reconcileVideoBadge() {
 // ════════════════════════════════════════════════════════════════
 function setVideoState(state) {
   S.videoState = state;
-  const states = ['connecting','no-vtx','error','offline'];
+  const states = ['connecting','no-vtx','error','offline','settling'];
   states.forEach(id => document.getElementById('vs-'+id).classList.remove('active'));
 
   const badge = document.getElementById('conn-badge');
@@ -1187,6 +1202,10 @@ function setVideoState(state) {
     statesDiv.classList.remove('hidden');
     document.getElementById('vs-offline').classList.add('active');
     badge.classList.add('offline'); label.textContent = 'Offline';
+  } else if (state === 'settling') {
+    statesDiv.classList.remove('hidden');
+    document.getElementById('vs-settling').classList.add('active');
+    badge.classList.add('connecting'); label.textContent = 'Switching…';
   }
 }
 
@@ -1454,13 +1473,52 @@ function applySettings() {
   const transport = document.querySelector('#pg-transport .pill.active')?.dataset.val || 'tcp';
   const fps       = parseInt(document.querySelector('#pg-fps .pill.active')?.dataset.val || '30');
   const quality   = parseInt(document.getElementById('sl-quality').value);
-  // scale stays 1.0 — a downscale only shrinks the browser image (no quality gain),
-  // so it's no longer exposed as a control.
+  const prevTransport = S.settings.transport;
+  // scale stays 1.0 — a downscale only shrinks the browser image (no quality gain).
   S.settings = { transport, fps, scale: 1.0, quality };
   closeSettings();
   S.retryCount = 0;
-  startStream();
-  toast(`Stream updated — ${transport.toUpperCase()} · ${quality}% · ${fps} fps`, 'info');
+
+  if (transport !== prevTransport) {
+    // Transport changed: need 3-second settle before reconnecting.
+    startStreamWithSettle();
+  } else {
+    // Only quality/fps changed: instant switch.
+    startStream();
+    toast(`Stream updated — ${transport.toUpperCase()} · ${quality}% · ${fps} fps`, 'info');
+  }
+}
+
+/** Show countdown overlay for SETTLE_DELAY_S seconds, then start the stream. */
+function startStreamWithSettle() {
+  if (_settleInterval) { clearInterval(_settleInterval); _settleInterval = null; }
+
+  const btn = document.getElementById('btn-apply');
+  if (btn) btn.disabled = true;
+
+  // Stop current stream src so the MJPEG connection drops immediately.
+  const img = document.getElementById('stream-img');
+  img.src = '';
+
+  // Show the settling state.
+  let count = SETTLE_DELAY_S;
+  const countEl = document.getElementById('vs-settle-count');
+  if (countEl) countEl.textContent = count;
+  setVideoState('settling');
+
+  _settleInterval = setInterval(() => {
+    count--;
+    if (countEl) countEl.textContent = Math.max(count, 0);
+    if (count <= 0) {
+      clearInterval(_settleInterval);
+      _settleInterval = null;
+      if (btn) btn.disabled = false;
+      // Now safe to reconnect.
+      startStream();
+      const { transport, quality, fps } = S.settings;
+      toast(`Stream updated — ${transport.toUpperCase()} · ${quality}% · ${fps} fps`, 'info');
+    }
+  }, 1000);
 }
 
 async function syncTime() {

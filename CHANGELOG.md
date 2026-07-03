@@ -2,7 +2,26 @@
 
 All notable changes to WS WiFi Stream are documented here.
 
+## 1.0.2
+
+### Fixed / Improved
+- **Safer transport settle delay (3 s).** The settle window between tearing down the
+  old RTSP session and opening a new one has been increased from 1.5 s to **3 s** on
+  both desktop and Android. The shorter window proved insufficient in real-world
+  conditions, causing the first TCP→UDP switch to hang until the app was restarted.
+- **Countdown UI when switching transport.** Instead of silently freezing for 3 s,
+  the app now shows an hourglass overlay with a visible **3 → 2 → 1** countdown and
+  the message *"Closing old session…"* — so you know the wait is intentional and how
+  long it will take. (Desktop + Android.)
+
+### Removed
+- **Resolution setting removed from desktop.** The resolution control only downscaled
+  the preview image in your browser; it did not change what the goggles capture or
+  record. Removing it avoids confusion — the goggles' own menu is the only place that
+  controls capture resolution.
+
 ## 1.0.1
+
 
 Connection-stability release. Fixes the goggles appearing to connect/disconnect
 repeatedly (status and telemetry flickering online↔offline) while the video kept

@@ -179,8 +179,8 @@ if sys.platform == "darwin":
         # icon="assets/icon.icns",
         bundle_identifier="com.wswifistream.desktop",
         info_plist={
-            "CFBundleShortVersionString": "1.0.1",
-            "CFBundleVersion": "1.0.1",
+            "CFBundleShortVersionString": "1.0.2",
+            "CFBundleVersion": "1.0.2",
             "NSHighResolutionCapable": True,
             "LSUIElement": False,   # show in Dock
         },

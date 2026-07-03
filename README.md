@@ -67,13 +67,16 @@ Your computer won't have internet while connected to the goggles. That's normal.
 3. **Open** the app → your browser opens automatically
 4. **Fly** — the app shows live video as soon as the drone is linked
 
-### Video quality settings
+### Stream settings
 
 Click the ⚙️ gear icon (or press `,`) to adjust:
 
-- **Resolution** — 1080p for best quality, 720p if the video stutters
-- **Quality** — lower if your WiFi connection is weak
-- **Transport** — TCP works best indoors; try UDP for lower latency outdoors
+- **Transport** — how video packets travel from the goggles to the app:
+  - **TCP** *(default)* — retransmits lost packets → clean image, slight extra latency. Best for indoor/close range.
+  - **UDP** — drops lost packets → lowest latency, may show brief glitches on a weak link. Better for outdoor/far range.
+  > Switching transport takes ~3 seconds while the app waits for the goggles to release the previous session. A countdown is shown on screen.
+- **JPEG Quality** — compression of the stream sent to your browser (does **not** affect what the goggles record).
+- **Max FPS** — caps how many frames/sec reach your browser; lower this on a weak link.
 
 ### Keyboard shortcuts
 
@@ -102,6 +105,9 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 
 **Stream settings note**  
 → Transport / JPEG quality / max FPS tune the video sent to *your browser* (bandwidth & CPU), **not** the goggles. The real capture resolution and bitrate are set in the goggles' own menu.
+
+**Switching TCP ↔ UDP**  
+→ The app shows a 3-second countdown ("Closing old session…") when you change transport. This is intentional — the goggles only support one RTSP session at a time and need a moment to release the old one before a new connection can open cleanly.
 
 ---
 

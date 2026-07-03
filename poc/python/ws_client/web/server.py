@@ -101,7 +101,7 @@ def _get_or_start_reader(transport: str = "tcp") -> LatestFrameReader:
                 _reader.stop()
             _current_transport = transport
             rtsp_host = _rtsp_host or _goggles_host
-            delay = 1.5 if restart else 0.0
+            delay = 3.0 if restart else 0.0
             debuglog.event(f"[reader] starting (transport={transport}, "
                            f"host={rtsp_host}, settle={delay:.1f}s)")
             _reader = LatestFrameReader(rtsp_host, transport=transport,
@@ -320,9 +320,11 @@ async def stream_restart(transport: str = Query("tcp", pattern="^(tcp|udp)$")):
             _reader.stop()
         _current_transport = transport
         rtsp_host = _rtsp_host or _goggles_host
-        # 1.5s settle so the goggles free the single RTSP session before reconnect.
+        # 3.0s settle so the goggles free the single RTSP session before reconnect.
+        # 1.5s was not always enough on slower hardware/firmware — 3s gives
+        # comfortable headroom without noticeably delaying manual recovery.
         _reader = LatestFrameReader(rtsp_host, transport=transport,
-                                    start_delay=1.5).start()
+                                    start_delay=3.0).start()
         _stream_start_time = time.monotonic()
     return {"ok": True, "transport": transport}
 
