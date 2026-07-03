@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Walksnail Goggles X interoperability project
+Copyright (c) 2026 WS WiFi Stream project
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,9 +20,27 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
----
+-------------------------------------------------------------------------------
 
-NOTE ON SCOPE: This license covers the original source code in this repository
-(the cross-platform client, web ground station, tools, and documentation). It
-does NOT grant any rights to the CaddxFPV / Walksnail application, firmware, or
-trademarks, and includes no third-party code.
+TRADEMARKS & DISCLAIMER
+
+WS WiFi Stream is an independent, community-made, UNOFFICIAL tool. It is not
+affiliated with, authorized by, sponsored by, endorsed by, or in any way
+officially connected to Caddx Technology Co., Ltd., RunCam, the "Walksnail"
+brand, or any of their subsidiaries or affiliates.
+
+"Walksnail", "Avatar", "Goggles X", and "Caddx" — and any related names, logos,
+and brands — are trademarks or registered trademarks of their respective owners.
+They are used in this project SOLELY to identify and describe the third-party
+hardware that this software is compatible with (nominative fair use). No
+trademark rights are claimed or granted, no affiliation or endorsement is
+implied, and no such logos are used.
+
+This Software is original work by the WS WiFi Stream project. It contains no
+source code, firmware, images, or other assets belonging to the companies above,
+and this license grants no rights to their applications, firmware, or
+trademarks. All product and company names are the property of their respective
+owners.
+
+The scope of the MIT license above covers only this project's own source code
+and documentation.
