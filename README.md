@@ -27,17 +27,21 @@ Live video · Battery & signal telemetry · DVR recordings manager.
 
 ## Download & Run
 
-### Mac
+Grab the latest from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases).
 
-1. Download **`WS-WiFi-Stream-mac.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
-2. Unzip → double-click **`WS-WiFi-Stream.app`**
-3. First time only: right-click → **Open** → **Open** *(macOS security prompt)*
+### Mac (Apple Silicon)
+
+1. Download **`WS-WiFi-Stream-mac-arm64.dmg`** → open it → drag **WS WiFi Stream** to **Applications**.
+2. First launch: right-click the app → **Open** → **Open** *(macOS security prompt)*.
+   *(Prefer no install? The `…-mac-arm64.zip` is a portable version — unzip and run.)*
 
 ### Windows
 
-1. Download **`WS-WiFi-Stream-win.zip`** from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
-2. Unzip anywhere → double-click **`WS-WiFi-Stream.exe`**
-3. First time only: click **"More info"** → **"Run anyway"** *(Windows security prompt)*
+1. Download **`WS-WiFi-Stream-win-setup.exe`** → run it *(installs for your user, no admin needed)*.
+2. First launch: **More info** → **Run anyway** *(Windows security prompt)*.
+   *(Prefer no install? The `…-win-amd64.zip` is a portable version — unzip and run.)*
+
+> **Using the app:** it opens in your browser. To close it, click **Quit** in the app — or just close the browser tab and it shuts down on its own.
 
 > **Why the security warning?**  
 > The app isn't signed by Apple/Microsoft (that costs money). The full source code is right here for anyone to review.
