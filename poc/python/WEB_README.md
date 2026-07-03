@@ -74,7 +74,7 @@ poc/python/
 ## Módulos
 
 ### 1. `protocol.py` — Wire Format
-[protocol.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/protocol.py)
+[protocol.py](ws_client/protocol.py)
 
 Capa pura (sin I/O). Define el formato del protocolo HTTP de las gafas.
 
@@ -113,7 +113,7 @@ Capa pura (sin I/O). Define el formato del protocolo HTTP de las gafas.
 ---
 
 ### 2. `client.py` — HTTP Control Client
-[client.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/client.py)
+[client.py](ws_client/client.py)
 
 Cliente HTTP sincrónico. **Solo usa stdlib** (urllib) — cero dependencias.
 
@@ -142,7 +142,7 @@ Cliente HTTP sincrónico. **Solo usa stdlib** (urllib) — cero dependencias.
 ---
 
 ### 3. `video.py` — RTSP Decode & Display
-[video.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/video.py)
+[video.py](ws_client/video.py)
 
 Decodifica el stream H.264 de las gafas vía RTSP usando PyAV (FFmpeg).
 
@@ -176,7 +176,7 @@ El corazón del video en vivo. Decodifica en un thread de background y expone **
 ---
 
 ### 4. `web/server.py` — FastAPI Backend
-[server.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/web/server.py)
+[server.py](ws_client/web/server.py)
 
 Servidor web que conecta todo: video MJPEG, telemetría WebSocket, API REST.
 
@@ -221,7 +221,7 @@ ws-web [--host HOST] [--port PORT] [--bind BIND]
 ---
 
 ### 5. `web/static/index.html` — Frontend SPA
-[index.html](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/web/static/index.html)
+[index.html](ws_client/web/static/index.html)
 
 Aplicación single-page con diseño dark premium. ~1160 líneas (HTML + CSS + JS en un solo archivo).
 
@@ -285,7 +285,7 @@ Aplicación single-page con diseño dark premium. ~1160 líneas (HTML + CSS + JS
 ---
 
 ### 6. `cli.py` — CLI
-[cli.py](file:///Users/pdl/Projects/Caddx%20APP/poc/python/ws_client/cli.py)
+[cli.py](ws_client/cli.py)
 
 CLI completo: `walksnail <command> [options]`
 
