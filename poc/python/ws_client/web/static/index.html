@@ -332,6 +332,7 @@
       background: rgba(74,222,128,0.1); color: var(--green); border: 1px solid rgba(74,222,128,0.25);
     }
     .vtx-pill.off { background: rgba(127,29,29,0.3); color: var(--red); border-color: rgba(248,113,113,0.2); }
+    .vtx-pill.warn { background: rgba(234,179,8,0.12); color: var(--amber, #eab308); border-color: rgba(234,179,8,0.3); }
 
     /* ── Device Info ────────────────────────────────────────────────────── */
     .info-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -912,6 +913,11 @@ const S = {
   ws: null,
   wsRetryTimer: null,
   statusPoll: null,
+  lastTelemetryOk: 0,     // ms timestamp of the last good telemetry frame
+  offlineTimer: null,     // grace-period timer before declaring hard offline
+  lastVideoTs: 0,         // ms timestamp of the last time real frames advanced
+  framesAtLastPoll: 0,    // frames_decoded at the previous status poll
+  uiReachable: false,     // whether telemetry currently reaches the goggles
   streamPaused: false,    // true while the Media library has the stream paused
   // Media library
   mediaOpen: false,
@@ -1042,13 +1048,12 @@ function resumeStream() {
 }
 
 function onStreamLoad() {
-  // First frame arrived
+  // The MJPEG stream connected. NOTE: this fires even for the server's
+  // placeholder slate (shown when there's no real video), so it does NOT mean
+  // frames are decoding — promotion to 'live' is owned by reconcileVideoBadge(),
+  // which checks actual frame flow. Here we just clear the retry/faded state.
   S.retryCount = 0;
   document.getElementById('stream-img').classList.remove('faded');
-  // State is driven by telemetry (vtx_connect); default to 'live' until WS says otherwise
-  if (S.videoState === 'connecting' || S.videoState === 'error') {
-    setVideoState('live');
-  }
   // Stale-frame detector: if frames_decoded doesn't increase for >5s, flag warning
   clearInterval(S.staleTimer);
   S.staleTimer = setInterval(() => {
@@ -1098,6 +1103,10 @@ async function pollStreamStatus() {
       S.fpsDisplay = newFrames > 0 ? (newFrames / elapsed).toFixed(1) : '0';
       document.getElementById('ctrl-fps').textContent = S.fpsDisplay;
     }
+    // Real video flow is the ground truth for "LIVE": did the decoder produce
+    // new frames since the last poll?
+    if (d.frames_decoded > S.framesAtLastPoll) S.lastVideoTs = now;
+    S.framesAtLastPoll = d.frames_decoded;
     S.lastFpsSample = now;
     S.lastFrameCount = d.frames_decoded;
 
@@ -1106,12 +1115,43 @@ async function pollStreamStatus() {
     document.getElementById('sb-uptime').textContent = d.uptime_s != null ? formatDuration(d.uptime_s) : '–';
     document.getElementById('sb-state').textContent = d.running ? 'running' : 'stopped';
 
-    if (d.last_error) {
+    // Show the reader's last error only when video is NOT flowing — otherwise a
+    // stale transient (e.g. a one-off "Invalid data") lingers while it's working.
+    if (d.last_error && !videoFlowing()) {
       document.getElementById('sb-error').textContent = '⚠ ' + d.last_error;
     } else {
       document.getElementById('sb-error').textContent = '';
     }
+
+    // Reconcile the connection badge with reality (not a stale label).
+    reconcileVideoBadge();
   } catch { /* server may be temporarily unavailable */ }
+}
+
+// True only when the decoder produced new frames very recently — the honest
+// definition of "LIVE" (vtx_connect alone is NOT enough: the link can be up
+// while RTSP delivers no decodable video).
+function videoFlowing() {
+  return (Date.now() - S.lastVideoTs) < 4000;
+}
+
+// Keep the badge/overlay honest: LIVE iff frames are flowing; otherwise fall
+// back to the most informative non-live state. Called every status poll.
+function reconcileVideoBadge() {
+  if (S.streamPaused) return;             // Media view stopped the stream on purpose
+  if (S.videoState === 'error') return;   // the <img> error path owns that state
+  if (videoFlowing()) {
+    if (S.videoState !== 'live') setVideoState('live');
+    return;
+  }
+  // No frames recently → definitely not LIVE. Only correct a stale 'live' badge
+  // (leave connecting/no-vtx/offline as telemetry set them).
+  if (S.videoState === 'live') {
+    const vtx = !!(S.telemetry && S.telemetry.vtx_connect);
+    if (!S.uiReachable)  setVideoState('offline');
+    else if (!vtx)       setVideoState('no-vtx');
+    else                 setVideoState('connecting');
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1167,7 +1207,7 @@ function connectWS() {
         onTelemetry(msg.data);
       } else if (msg.type === 'error') {
         // Telemetry poll failed — likely goggles offline
-        handleOffline(msg.message);
+        handleTelemetryDrop(msg.message);
       }
     } catch {}
   };
@@ -1175,18 +1215,44 @@ function connectWS() {
   S.ws.onerror = () => { /* close will follow */ };
   S.ws.onclose = () => {
     S.wsRetryTimer = setTimeout(connectWS, 3000);
-    handleOffline('WebSocket disconnected');
+    handleTelemetryDrop('WebSocket disconnected');
   };
 }
 
-function handleOffline(reason) {
+// How long telemetry may be silent before we declare the goggles offline. The
+// control plane opens a fresh HTTP connection per poll and, on a weak/embedded
+// link (notably Windows, where closed sockets linger in TIME_WAIT), the odd poll
+// burst fails and recovers. Without hysteresis that flapped the whole UI
+// online↔offline even though the goggles were plainly reachable. So: a blip
+// shows a soft "Reconnecting…" and keeps the last data; only sustained loss (and
+// only when the video isn't live) becomes a hard offline.
+const OFFLINE_GRACE_MS = 5000;
+
+function handleTelemetryDrop(reason) {
+  const lnk = document.getElementById('lnk-goggles');
+  lnk.textContent = 'Reconnecting…';
+  lnk.className = 'vtx-pill warn';
+  // If real frames are flowing the goggles are demonstrably reachable — never
+  // blank/offline on a telemetry blip. Last metrics stay until fresh data lands.
+  if (videoFlowing()) return;
+  // No video to corroborate: give it a grace period, then hard-offline if still
+  // silent (a good telemetry frame in the meantime clears this timer).
+  clearTimeout(S.offlineTimer);
+  S.offlineTimer = setTimeout(() => {
+    if (Date.now() - S.lastTelemetryOk >= OFFLINE_GRACE_MS - 100) hardOffline(reason);
+  }, OFFLINE_GRACE_MS);
+}
+
+function hardOffline(reason) {
+  S.uiReachable = false;
   const lnk = document.getElementById('lnk-goggles');
   lnk.textContent = 'Offline';
   lnk.className = 'vtx-pill off';
   const lnkV = document.getElementById('lnk-vtx');
   lnkV.textContent = 'No link'; lnkV.className = 'vtx-pill off';
   blankTelemetry();
-  if (S.videoState !== 'error' && S.videoState !== 'connecting') {
+  // Never override a genuinely live feed — if frames are flowing, it's online.
+  if (S.videoState !== 'error' && S.videoState !== 'connecting' && !videoFlowing()) {
     setVideoState('offline');
   }
 }
@@ -1210,6 +1276,10 @@ function blankTelemetry() {
 
 function onTelemetry(data) {
   S.telemetry = data;
+  // Fresh good data — the goggles are reachable; cancel any pending offline timer.
+  S.lastTelemetryOk = Date.now();
+  S.uiReachable = true;
+  clearTimeout(S.offlineTimer);
   const vtx = !!data.vtx_connect;
 
   // Goggles link status
@@ -1221,13 +1291,14 @@ function onTelemetry(data) {
   lnkV.textContent = vtx ? 'Linked' : 'No link';
   lnkV.className = vtx ? 'vtx-pill' : 'vtx-pill off';
 
-  // Drive video state
+  // Drive video state. LIVE requires real frames (videoFlowing) — a VTX link
+  // with no decodable video is "Connecting…", not LIVE.
   if (S.videoState !== 'error') {
-    if (!vtx && S.videoState !== 'connecting') {
-      setVideoState('no-vtx');
-    } else if (vtx && (S.videoState === 'no-vtx' || S.videoState === 'connecting' || S.videoState === 'offline')) {
-      setVideoState('live');
-    } else if (S.videoState === 'offline' || S.videoState === 'init') {
+    if (!vtx) {
+      if (S.videoState !== 'connecting') setVideoState('no-vtx');
+    } else if (videoFlowing()) {
+      if (S.videoState !== 'live') setVideoState('live');
+    } else if (S.videoState !== 'live') {
       setVideoState('connecting');
     }
   }

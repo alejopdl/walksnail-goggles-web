@@ -513,27 +513,63 @@ app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True, check_dir=False
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+# On Windows, msvcrt locks are *mandatory* (they block reads of the locked
+# bytes), so we lock a single byte well past the short PID text we store at
+# offset 0 — that way a second instance can still read the holder's PID.
+_LOCK_BYTE_OFFSET = 1024
+
+
+def _try_exclusive_lock(fh) -> bool:
+    """Take a non-blocking, OS-level exclusive lock on ``fh``.
+
+    Returns ``True`` if we got it, ``False`` if another process already holds it.
+    Uses ``fcntl.flock`` on POSIX (macOS/Linux) and ``msvcrt.locking`` on Windows
+    so the single-instance guard works on *every* desktop platform. On the rare
+    platform with neither primitive it returns ``True`` (best effort — don't
+    block startup over a missing lock).
+    """
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+    if fcntl is not None:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+    try:
+        import msvcrt  # Windows
+    except ImportError:  # pragma: no cover — no lock primitive at all
+        return True
+    try:
+        fh.seek(_LOCK_BYTE_OFFSET)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        return True
+    except OSError:
+        return False
+    finally:
+        try:
+            fh.seek(0)
+        except OSError:
+            pass
+
+
 def _acquire_single_instance_lock(host: str):
     """Ensure only ONE ground station targets a given goggles host.
 
     The goggles' RTSP server is single-session: two server instances streaming
     the same goggles fight over (and can wedge) that one session. We take an
-    exclusive, OS-level advisory lock on a per-host lockfile. A second instance
-    for the same host exits with a clear message instead of stealing the stream.
+    exclusive, OS-level lock on a per-host lockfile (see :func:`_try_exclusive_lock`,
+    which covers both macOS/Linux and Windows). A second instance for the same
+    host exits with a clear message instead of stealing the stream.
 
-    Returns the open lock file handle (keep it alive for the process lifetime),
-    or ``None`` on platforms without ``fcntl`` (lock simply not enforced there).
+    Returns the open lock file handle (keep it alive for the process lifetime).
     """
-    try:
-        import fcntl
-    except ImportError:  # pragma: no cover — non-POSIX
-        return None
     key = hashlib.sha1(host.encode()).hexdigest()[:12]
     lock_path = Path(tempfile.gettempdir()) / f"ws-web-{key}.lock"
     fh = open(lock_path, "a+")  # don't truncate — a loser must still read the PID
-    try:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    if not _try_exclusive_lock(fh):
         try:
             prev = lock_path.read_text().strip() or "another process"
         except OSError:

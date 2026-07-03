@@ -6,6 +6,8 @@ be reachable on its Wi-Fi AP (default host 192.168.42.1).
 
 from __future__ import annotations
 
+import http.client
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -44,8 +46,82 @@ class WSClient:
         self.host = host
         self.timeout = timeout
         self.base = f"http://{host}"
+        # A single kept-alive HTTP connection, reused across control calls. The
+        # goggles run a tiny embedded HTTP server; opening a fresh TCP connection
+        # for every poll (twice a second) floods it with connect/teardown churn —
+        # tolerable on macOS but on Windows the closed sockets pile up in
+        # TIME_WAIT and polls start failing in bursts, which the UI shows as the
+        # status flapping online/offline while the (single, persistent) RTSP
+        # video keeps flowing. Reusing one connection removes that churn.
+        self._conn: http.client.HTTPConnection | None = None
+        self._conn_lock = threading.Lock()
 
     # --- transport --------------------------------------------------------
+
+    def _host_port(self) -> tuple[str, int]:
+        """Split ``host`` (``"1.2.3.4"`` or ``"127.0.0.1:18080"``) into host+port."""
+        if ":" in self.host:
+            h, port = self.host.rsplit(":", 1)
+            return h, int(port)
+        return self.host, 80
+
+    def _close_conn(self) -> None:
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._conn = None
+
+    def _send(self, endpoint: str, data: bytes, timeout: float) -> bytes:
+        """One request over the (possibly reused) kept-alive connection."""
+        conn = self._conn
+        if conn is None:
+            host, port = self._host_port()
+            conn = http.client.HTTPConnection(host, port, timeout=timeout)
+            self._conn = conn
+        # Apply this call's timeout even to an already-open socket (records use a
+        # much longer timeout than the 2s telemetry poll on the same connection).
+        conn.timeout = timeout
+        if conn.sock is not None:
+            conn.sock.settimeout(timeout)
+        conn.request("POST", endpoint, body=data, headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+        })
+        resp = conn.getresponse()
+        raw = resp.read()  # must drain fully for the connection to be reusable
+        status = resp.status
+        if resp.will_close:  # server won't keep-alive — drop so next call reconnects
+            self._close_conn()
+        if status >= 400:
+            # Match the old urllib.urlopen behaviour: an HTTP error is a failure,
+            # not a body to parse. Drop the connection so we don't reuse it.
+            self._close_conn()
+            raise http.client.HTTPException(f"HTTP {status} {resp.reason}")
+        return raw
+
+    def _request(self, endpoint: str, data: bytes, timeout: float) -> bytes:
+        """Send a POST, transparently reconnecting once if a reused socket was stale.
+
+        Serialised by ``_conn_lock`` so concurrent callers (multiple browser tabs,
+        telemetry + a records query) share the one connection instead of each
+        opening their own — which would reintroduce the churn we're avoiding.
+        """
+        with self._conn_lock:
+            reused = self._conn is not None
+            try:
+                return self._send(endpoint, data, timeout)
+            except Exception:  # noqa: BLE001
+                self._close_conn()
+                if not reused:
+                    raise  # fresh connection failed → the goggles are unreachable
+                # A kept-alive socket the server closed under us — reconnect once,
+                # and leave a clean (closed) state if that retry also fails.
+                try:
+                    return self._send(endpoint, data, timeout)
+                except Exception:  # noqa: BLE001
+                    self._close_conn()
+                    raise
 
     def _post(self, endpoint: str, body_obj: dict[str, Any],
               *, timeout: float | None = None) -> dict[str, Any]:
@@ -58,18 +134,10 @@ class WSClient:
         else:
             cmd_name = top
         data = p.szcmd(body_obj).encode("ascii")
-        req = urllib.request.Request(
-            self.base + endpoint, data=data, method="POST",
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Connection": "close",
-            },
-        )
         to = timeout if timeout is not None else self.timeout
         t0 = time.monotonic()
         try:
-            with urllib.request.urlopen(req, timeout=to) as resp:
-                raw = resp.read()
+            raw = self._request(endpoint, data, to)
             result = p.parse_response(raw, command=cmd_name)
         except Exception as e:  # noqa: BLE001 — log then re-raise
             if debuglog.enabled():

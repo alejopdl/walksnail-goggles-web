@@ -105,13 +105,28 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 
 ---
 
+## ⚠️ One device at a time (important)
+
+**The goggles serve a single video (RTSP) session.** Only **one** app — phone **or** computer — can view the live feed at a time. Connecting a second one while the first is streaming is unreliable and can go a few ways:
+
+- **The goggles can crash outright** (video dies everywhere; the second app never connects). This has been seen in *both* orders — opening the phone while the PC streams, and opening the PC while the phone streams — so treat it as: **connecting a second viewer may crash the goggles.**
+- If they don't crash, the second app usually **grabs the feed** and the first one **freezes on its last frame**. (Telemetry/gallery may still respond on the frozen device for a bit.)
+- The device that "loses" the feed may **not recover on its own** on older app versions; **1.0.1+ auto-reconnects** the video once the session is free again.
+
+**How to recover:** **power-cycle the goggles.** You do *not* need to restart the apps — once the goggles come back, a running app reconnects on its own. Then use just **one** device for live video.
+
+> Telemetry-only on a second device is usually tolerable, but **live video is strictly one at a time.** On the *same computer*, a second copy is refused automatically; across two different devices there's nothing the app can do — the limit is in the goggles' firmware.
+
 ## Known issues & troubleshooting
 
+- **A device that lost the video feed (see above) stays frozen on the last frame and won't reconnect.** This happens after another device grabbed the single RTSP session. **Power-cycle the goggles** to recover.
 - **Video freezes after switching transport or applying settings, and shows "Live feed stuck — reboot the goggles".**  
-  The goggles serve a **single** RTSP video session. Restarting the stream too soon can leave that session wedged. The app now waits before reconnecting and detects the stuck state — if you see that message, **power-cycle the goggles** to recover.
+  The goggles serve a single RTSP video session. Restarting the stream too soon can leave that session wedged. The app waits before reconnecting and detects the stuck state — if you see that message, **power-cycle the goggles** to recover.
 - **UDP looks glitchy.** UDP trades reliability for latency; on a weak Wi-Fi link you'll see artifacts. Use **TCP** for a clean image (the default).
 - **The gallery takes a few seconds to load** if the goggles' SD card holds many clips (hundreds). It no longer times out, just be patient.
 - **The video keeps flickering "No VTX" while the goggles boot.** Give them a few seconds to finish starting; link detection is debounced so it should settle on its own.
+
+> **Status flickering online/offline?** Fixed in **1.0.1** — the app now keeps one persistent connection to the goggles and rides out the odd dropped poll instead of flapping. See the [changelog](CHANGELOG.md).
 
 ---
 
@@ -173,4 +188,4 @@ Want to run from source or contribute? See [WEB_README.md](poc/python/WEB_README
 
 ---
 
-*[MIT License](LICENSE) · Unofficial — not affiliated with Caddx or Walksnail ([trademarks](TRADEMARKS.md))*
+*[MIT License](LICENSE) · [Changelog](CHANGELOG.md) · Unofficial — not affiliated with Caddx or Walksnail ([trademarks](TRADEMARKS.md))*

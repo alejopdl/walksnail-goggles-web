@@ -193,7 +193,9 @@ class TestRecords:
     def test_list_with_params(self, client, _mock_goggles):
         fake_client, _ = _mock_goggles
         client.get("/api/records?start=5&limit=10")
-        fake_client.list_records.assert_called_with(5, 10)
+        # api_records runs the heavy query off the event loop with a generous
+        # timeout (see server.api_records) — hence the timeout kwarg.
+        fake_client.list_records.assert_called_with(5, 10, timeout=15.0)
 
     def test_503_on_failure(self, client, _mock_goggles):
         fake_client, _ = _mock_goggles
