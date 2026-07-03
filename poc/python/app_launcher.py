@@ -103,7 +103,18 @@ def main() -> None:
                         help="Web UI port (default: auto — picks an uncommon free port)")
     parser.add_argument("--no-browser", action="store_true",
                         help="Don't open browser automatically")
+    parser.add_argument("--debug", action="store_true",
+                        help="Write a session debug log (goggles requests, RTSP "
+                             "reconnects, VTX transitions, request rate)")
+    parser.add_argument("--debug-verbose", action="store_true",
+                        help="Like --debug but also logs full request/response bodies")
     args = parser.parse_args()   # prints help and exits if --help
+
+    # ── Debug logging (opt-in) ────────────────────────────────────────────
+    import ws_client.debuglog as debuglog
+    log_path = debuglog.setup(args.debug or args.debug_verbose, args.debug_verbose)
+    if log_path:
+        print(f"\n  🐞 DEBUG MODE — session log:\n     {log_path}\n", flush=True)
 
     port = _find_free_port(args.port)
     static_dir = Path(_meipass_or("static"))

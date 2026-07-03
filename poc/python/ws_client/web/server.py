@@ -35,9 +35,12 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
+from ws_client import debuglog
 from ws_client import protocol as p
 from ws_client.client import WSClient
 from ws_client.video import LatestFrameReader
+
+_dbg_last_vtx: "bool | None" = None  # last VTX link state seen (debug transitions)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -85,9 +88,12 @@ def _get_or_start_reader(transport: str = "tcp") -> LatestFrameReader:
     with _reader_lock:
         if _reader is None or transport != _current_transport:
             if _reader is not None:
+                debuglog.event(f"[reader] stopping (transport change "
+                               f"{_current_transport}->{transport})")
                 _reader.stop()
             _current_transport = transport
             rtsp_host = _rtsp_host or _goggles_host
+            debuglog.event(f"[reader] starting (transport={transport}, host={rtsp_host})")
             _reader = LatestFrameReader(rtsp_host, transport=transport).start()
             _stream_start_time = time.monotonic()
     return _reader
@@ -294,6 +300,7 @@ async def stream_status():
 async def stream_restart(transport: str = Query("tcp", pattern="^(tcp|udp)$")):
     """Force-stop and restart the RTSP reader (transport change or manual recovery)."""
     global _reader
+    debuglog.event(f"[reader] manual restart requested (transport={transport})")
     with _reader_lock:
         if _reader:
             _reader.stop()
@@ -404,23 +411,35 @@ async def ws_telemetry(ws: WebSocket):
     Also doubles as the liveness signal for auto-shutdown: while a browser tab is
     open it holds this socket; when it closes, the client count drops and the app
     may quit (see _maybe_autoshutdown)."""
-    global _active_clients
+    global _active_clients, _dbg_last_vtx
     await ws.accept()
     _active_clients += 1
+    debuglog.event(f"[ws] telemetry client connected (active={_active_clients})")
     client = _get_client()
     loop = asyncio.get_running_loop()
     try:
         while True:
             try:
                 state = await loop.run_in_executor(None, client.get_device_state)
+                vtx = bool(state.get("vtx_connect"))
+                if vtx != _dbg_last_vtx:
+                    if _dbg_last_vtx is None:
+                        debuglog.event(f"[vtx] initial state: "
+                                       f"{'LINKED' if vtx else 'NO VTX'}")
+                    else:
+                        debuglog.event(f"[vtx] transition: "
+                                       f"{'NO VTX -> LINKED' if vtx else 'LINKED -> NO VTX'}")
+                    _dbg_last_vtx = vtx
                 await ws.send_json({"type": "state", "data": state})
             except Exception as exc:
+                debuglog.event(f"[ws] telemetry poll error: {type(exc).__name__}: {exc}")
                 await ws.send_json({"type": "error", "message": str(exc)})
             await asyncio.sleep(0.5)
     except (WebSocketDisconnect, Exception):
         pass
     finally:
         _active_clients -= 1
+        debuglog.event(f"[ws] telemetry client disconnected (active={_active_clients})")
         _maybe_autoshutdown()
 
 
@@ -516,7 +535,20 @@ def main() -> None:
         help="Skip the single-instance lock. By default a second server for the "
              "same goggles is refused (the RTSP feed is single-session)."
     )
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="Write a session debug log (goggles requests, RTSP reconnects, "
+             "VTX transitions, request rate)."
+    )
+    parser.add_argument(
+        "--debug-verbose", action="store_true",
+        help="Like --debug but also logs full request/response bodies."
+    )
     args = parser.parse_args()
+
+    log_path = debuglog.setup(args.debug or args.debug_verbose, args.debug_verbose)
+    if log_path:
+        print(f"\n  🐞 DEBUG MODE — session log: {log_path}")
 
     # Refuse a second instance for the same goggles unless explicitly allowed.
     _lock = None if args.allow_multi else _acquire_single_instance_lock(args.host)

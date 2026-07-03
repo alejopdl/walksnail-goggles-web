@@ -6,11 +6,13 @@ be reachable on its Wi-Fi AP (default host 192.168.42.1).
 
 from __future__ import annotations
 
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from . import debuglog
 from . import protocol as p
 
 
@@ -57,8 +59,28 @@ class WSClient:
                 "Connection": "close",
             },
         )
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            return p.parse_response(resp.read(), command=cmd_name)
+        t0 = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read()
+            result = p.parse_response(raw, command=cmd_name)
+        except Exception as e:  # noqa: BLE001 — log then re-raise
+            if debuglog.enabled():
+                dur = (time.monotonic() - t0) * 1000
+                debuglog.req("HTTP", cmd_name, dur, False,
+                             f"{type(e).__name__}: {e}")
+            raise
+        if debuglog.enabled():
+            dur = (time.monotonic() - t0) * 1000
+            if debuglog.verbose():
+                detail = f"body={p.szcmd(body_obj)!r} resp={raw[:400]!r}"
+            elif cmd_name == "devicestate":
+                st = result.get("stValue", {}) if isinstance(result, dict) else {}
+                detail = f"vtx_connect={st.get('vtx_connect')}"
+            else:
+                detail = ""
+            debuglog.req("HTTP", cmd_name, dur, True, detail)
+        return result
 
     def _ajax(self, body_obj: dict[str, Any]) -> dict[str, Any]:
         return self._post(p.EP_AJAXCOM, body_obj)
@@ -129,10 +151,22 @@ class WSClient:
         """Download a DVR clip to ``dest`` (streamed). Returns ``dest``."""
         url = self.record_url(filename)
         # Long timeout: clips can be large; download is not a control call.
-        with urllib.request.urlopen(url, timeout=max(self.timeout, 60)) as resp, \
-                open(dest, "wb") as fh:
-            while chunk := resp.read(1 << 16):
-                fh.write(chunk)
+        t0 = time.monotonic()
+        total = 0
+        debuglog.event(f"[dvr] download start {filename}")
+        try:
+            with urllib.request.urlopen(url, timeout=max(self.timeout, 60)) as resp, \
+                    open(dest, "wb") as fh:
+                while chunk := resp.read(1 << 16):
+                    fh.write(chunk)
+                    total += len(chunk)
+        except Exception as e:  # noqa: BLE001
+            debuglog.req("DVR", f"download {filename}",
+                         (time.monotonic() - t0) * 1000, False,
+                         f"{type(e).__name__}: {e} ({total} bytes)")
+            raise
+        debuglog.req("DVR", f"download {filename}",
+                     (time.monotonic() - t0) * 1000, True, f"{total} bytes")
         return dest
 
     def delete_record(self, filename: str) -> None:

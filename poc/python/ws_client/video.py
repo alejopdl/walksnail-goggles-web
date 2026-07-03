@@ -24,6 +24,7 @@ import time
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
+from . import debuglog
 from . import protocol as p
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -98,19 +99,30 @@ class LatestFrameReader:
         import av
 
         connect_fails = 0
+        session = 0
+        frame_errs = 0
         while not self._stop.is_set():
+            session += 1
+            debuglog.event(f"[rtsp] connect attempt #{session} "
+                           f"(transport={self.transport}, host={self.host})")
+            t0 = time.monotonic()
             try:
                 container, stream = _open(self.host, self.transport)
                 connect_fails = 0  # connected — reset backoff
+                debuglog.event(f"[rtsp] connected in "
+                               f"{(time.monotonic() - t0) * 1000:.0f}ms")
             except Exception as e:  # noqa: BLE001 — connect failed; back off + retry
                 self.last_error = e
                 # Exponential backoff (0.5s → 5s cap). Rapid reconnects can wedge
                 # the goggles' single-session RTSP server, so don't hammer it.
                 connect_fails += 1
                 delay = min(0.5 * (2 ** (connect_fails - 1)), 5.0)
+                debuglog.event(f"[rtsp] connect FAILED #{connect_fails} "
+                               f"(backoff {delay:.1f}s): {type(e).__name__}: {e}")
                 if self._stop.wait(delay):
                     return
                 continue
+            got_frame = False
             try:
                 for packet in container.demux(stream):
                     if self._stop.is_set():
@@ -121,15 +133,31 @@ class LatestFrameReader:
                             with self._lock:
                                 self._frame = img
                             self.frames_decoded += 1
+                            if not got_frame:
+                                got_frame = True
+                                debuglog.event(
+                                    f"[rtsp] first frame in "
+                                    f"{(time.monotonic() - t0) * 1000:.0f}ms "
+                                    f"(total decoded={self.frames_decoded})")
                     except av.error.FFmpegError as e:
                         self.last_error = e  # corrupt frame (UDP loss) — skip
+                        frame_errs += 1
+                        # rate-limit: first, then every 100th corrupt frame
+                        if debuglog.enabled() and (frame_errs <= 3 or frame_errs % 100 == 0):
+                            debuglog.event(f"[rtsp] corrupt frame #{frame_errs}: {e}")
                         continue
             except av.error.FFmpegError as e:
                 self.last_error = e  # stream hiccup/EOF — reconnect
+                debuglog.event(f"[rtsp] stream error after {self.frames_decoded} "
+                               f"frames -> reconnect: {type(e).__name__}: {e}")
+            else:
+                debuglog.event(f"[rtsp] stream ended (demux exhausted) after "
+                               f"{self.frames_decoded} frames -> reconnect")
             finally:
                 container.close()
             if self._stop.wait(0.1):  # brief pause before reconnect
                 return
+        debuglog.event("[rtsp] reader stopped")
 
     def read(self) -> "np.ndarray | None":
         """Most recent frame, or ``None`` if none decoded yet."""
