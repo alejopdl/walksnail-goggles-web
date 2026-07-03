@@ -548,6 +548,14 @@
         <span class="dot"></span>
         <span id="conn-label">Offline</span>
       </div>
+      <button class="hdr-btn" id="btn-quit" onclick="quitApp()"
+              data-tip-title="Quit" data-tip="Stops WS WiFi Stream and shuts down the server. You can then close this window. (Closing this tab also quits the app.)">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+          <path d="M6 2.5H4A1.5 1.5 0 0 0 2.5 4v8A1.5 1.5 0 0 0 4 13.5h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M9.5 5l3 3-3 3M12.5 8H6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="hdr-btn-label">Quit</span>
+      </button>
     </div>
   </header>
 
@@ -1391,6 +1399,18 @@ async function syncTime() {
 //  Opening pauses the live stream so the device isn't transcoding video
 //  and serving files at the same time (the goggles use one-shot HTTP).
 // ════════════════════════════════════════════════════════════════
+function quitApp() {
+  // Tell the server to shut down, then replace the page with a friendly notice.
+  // (Simply closing this tab also quits the app via the telemetry WebSocket.)
+  try { fetch('/api/shutdown', { method: 'POST', keepalive: true }); } catch (e) {}
+  document.documentElement.innerHTML =
+    '<body style="margin:0;display:flex;align-items:center;justify-content:center;'
+    + 'height:100vh;flex-direction:column;gap:10px;font-family:system-ui,-apple-system,sans-serif;'
+    + 'background:#0b0f17;color:#e5e7eb;text-align:center;padding:24px">'
+    + '<div style="font-size:19px;font-weight:600">WS WiFi Stream closed</div>'
+    + '<div style="opacity:.55;font-size:14px">You can close this window.</div></body>';
+}
+
 function openMedia() {
   if (S.mediaOpen) return;
   S.mediaOpen = true;

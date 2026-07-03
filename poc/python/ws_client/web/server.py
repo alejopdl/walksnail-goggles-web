@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import hashlib
 import os
+import signal
 import sys
 import tempfile
 import threading
@@ -218,6 +219,40 @@ async def _mjpeg_gen(
 app = FastAPI(title="WS WiFi Stream", docs_url=None, redoc_url=None)
 
 
+# ── Lifecycle / auto-shutdown ---------------------------------------------
+# The packaged desktop app has no window of its own — the browser tab IS the UI.
+# The launcher enables auto-shutdown; each open tab holds a telemetry WebSocket,
+# so when the last tab closes we quit after a short grace period (no orphaned
+# background process). The UI's "Quit" button hits /api/shutdown directly.
+_auto_shutdown_enabled = False
+_active_clients = 0
+_SHUTDOWN_GRACE = 6.0  # seconds to wait for a reconnect before quitting
+
+
+def _quit_process() -> None:
+    """Stop the whole app gracefully. SIGINT is handled by both the launcher and
+    standalone uvicorn, so this shuts down cleanly in either context."""
+    os.kill(os.getpid(), signal.SIGINT)
+
+
+def _do_autoshutdown() -> None:
+    # Quit only if still no clients after the grace period (tab wasn't reopened).
+    if _auto_shutdown_enabled and _active_clients <= 0:
+        _quit_process()
+
+
+def _maybe_autoshutdown() -> None:
+    if _auto_shutdown_enabled and _active_clients <= 0:
+        threading.Timer(_SHUTDOWN_GRACE, _do_autoshutdown).start()
+
+
+@app.post("/api/shutdown")
+async def api_shutdown():
+    """Explicit 'Quit' from the UI: reply first, then exit a moment later."""
+    threading.Timer(0.3, _quit_process).start()
+    return {"ok": True}
+
+
 # ── Video ------------------------------------------------------------------
 
 @app.get("/video/stream")
@@ -364,8 +399,14 @@ async def api_download(filename: str, inline: bool = False):
 
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(ws: WebSocket):
-    """Push devicestate JSON every 500 ms. Sends {type, data} or {type, message}."""
+    """Push devicestate JSON every 500 ms. Sends {type, data} or {type, message}.
+
+    Also doubles as the liveness signal for auto-shutdown: while a browser tab is
+    open it holds this socket; when it closes, the client count drops and the app
+    may quit (see _maybe_autoshutdown)."""
+    global _active_clients
     await ws.accept()
+    _active_clients += 1
     client = _get_client()
     loop = asyncio.get_running_loop()
     try:
@@ -378,6 +419,9 @@ async def ws_telemetry(ws: WebSocket):
             await asyncio.sleep(0.5)
     except (WebSocketDisconnect, Exception):
         pass
+    finally:
+        _active_clients -= 1
+        _maybe_autoshutdown()
 
 
 # ── Static SPA (must be mounted last) -------------------------------------

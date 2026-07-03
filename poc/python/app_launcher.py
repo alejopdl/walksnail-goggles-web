@@ -28,11 +28,23 @@ def _meipass_or(rel: str) -> str:
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-def _find_free_port(preferred: int = 8080) -> int:
-    for port in (preferred, 0):
+def _find_free_port(preferred: int | None = None) -> int:
+    """Pick a port that's actually free.
+
+    Prefers an uncommon port so we don't collide with common dev servers
+    (3000/5000/8000/8080…). If the preferred/candidate ports are busy, keep
+    trying; as a last resort let the OS assign any free port (bind to 0).
+
+    Note: SO_REUSEADDR is intentionally NOT set here — we want the bind to
+    genuinely fail when the port is taken, so busy ports are detected correctly.
+    """
+    candidates = []
+    if preferred:
+        candidates.append(preferred)
+    candidates += [8477, 8478, 8479, 8480, 8481, 0]  # uncommon range, then "any free"
+    for port in candidates:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.bind(("127.0.0.1", port))
                 return s.getsockname()[1]
         except OSError:
@@ -87,8 +99,8 @@ def main() -> None:
     )
     parser.add_argument("--host", default="192.168.42.1",
                         help="Goggles IP (default: 192.168.42.1)")
-    parser.add_argument("--port", type=int, default=8080,
-                        help="Web UI port (default: 8080, auto-adjusted if busy)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="Web UI port (default: auto — picks an uncommon free port)")
     parser.add_argument("--no-browser", action="store_true",
                         help="Don't open browser automatically")
     args = parser.parse_args()   # prints help and exits if --help
@@ -116,6 +128,9 @@ def main() -> None:
     # ── 4. Configure goggles host ─────────────────────────────────────────
     srv._goggles_host = args.host
     srv._client = None  # lazy-created on first request
+    # This is the packaged app (no window of its own): quit when the browser
+    # tab closes, so we never leave an invisible background process running.
+    srv._auto_shutdown_enabled = True
 
     # ── 5. Start uvicorn in a background thread ───────────────────────────
     import uvicorn
