@@ -40,7 +40,12 @@ from ws_client import protocol as p
 from ws_client.client import WSClient
 from ws_client.video import LatestFrameReader
 
-_dbg_last_vtx: "bool | None" = None  # last VTX link state seen (debug transitions)
+# VTX debounce: only accept a link-state change after this many agreeing polls,
+# so a single flaky poll (common while the goggles boot) doesn't flap the UI.
+VTX_DEBOUNCE = 2
+_vtx_stable: "bool | None" = None    # debounced VTX link state (what the UI sees)
+_vtx_pending_count = 0               # consecutive polls disagreeing with _vtx_stable
+_records_busy = False                # a heavy DVR query is in flight; telemetry yields
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -87,14 +92,20 @@ def _get_or_start_reader(transport: str = "tcp") -> LatestFrameReader:
     global _reader, _current_transport, _stream_start_time
     with _reader_lock:
         if _reader is None or transport != _current_transport:
+            # A restart (previous reader existed) needs a settle delay so the
+            # goggles release their single RTSP session before we reconnect.
+            restart = _reader is not None
             if _reader is not None:
                 debuglog.event(f"[reader] stopping (transport change "
                                f"{_current_transport}->{transport})")
                 _reader.stop()
             _current_transport = transport
             rtsp_host = _rtsp_host or _goggles_host
-            debuglog.event(f"[reader] starting (transport={transport}, host={rtsp_host})")
-            _reader = LatestFrameReader(rtsp_host, transport=transport).start()
+            delay = 1.5 if restart else 0.0
+            debuglog.event(f"[reader] starting (transport={transport}, "
+                           f"host={rtsp_host}, settle={delay:.1f}s)")
+            _reader = LatestFrameReader(rtsp_host, transport=transport,
+                                        start_delay=delay).start()
             _stream_start_time = time.monotonic()
     return _reader
 
@@ -191,7 +202,10 @@ async def _mjpeg_gen(
             # Show a contextual placeholder while waiting for the first frame
             last_err = reader.last_error
             err_s = str(last_err).lower() if last_err else ""
-            if last_err and "empty" in err_s:
+            if reader.wedged:
+                msg, sub = ("Live feed stuck",
+                            "Reboot the goggles to recover (RTSP session wedged)")
+            elif last_err and "empty" in err_s:
                 msg, sub = "No VTX signal", "Power on the drone / air unit"
             elif "invalid data" in err_s or "404" in err_s or "401" in err_s:
                 # RTSP reachable but no decodable stream — almost always the feed
@@ -299,13 +313,17 @@ async def stream_status():
 @app.post("/api/stream/restart")
 async def stream_restart(transport: str = Query("tcp", pattern="^(tcp|udp)$")):
     """Force-stop and restart the RTSP reader (transport change or manual recovery)."""
-    global _reader
+    global _reader, _current_transport, _stream_start_time
     debuglog.event(f"[reader] manual restart requested (transport={transport})")
     with _reader_lock:
         if _reader:
             _reader.stop()
-        _reader = None
-    _get_or_start_reader(transport)
+        _current_transport = transport
+        rtsp_host = _rtsp_host or _goggles_host
+        # 1.5s settle so the goggles free the single RTSP session before reconnect.
+        _reader = LatestFrameReader(rtsp_host, transport=transport,
+                                    start_delay=1.5).start()
+        _stream_start_time = time.monotonic()
     return {"ok": True, "transport": transport}
 
 
@@ -361,11 +379,27 @@ async def api_settime():
 
 @app.get("/api/records")
 async def api_records(start: int = 0, limit: int = 500):
-    """List DVR clips. Returns {total, rows: [{szFileName, duration}, ...]}.""" 
+    """List DVR clips. Returns {total, rows: [{szFileName, duration}, ...]}.
+
+    ``query_record`` is heavy on the goggles, so we: cap an over-large limit,
+    run it off the event loop, give it a generous timeout, and flag
+    ``_records_busy`` so the telemetry loop pauses (no concurrent hammering).
+    """
+    global _records_busy
+    limit = max(1, min(limit, 5000))  # the goggles hold few clips; huge limits are slow
+    loop = asyncio.get_running_loop()
+    _records_busy = True
+    debuglog.event(f"[dvr] records query start (limit={limit})")
     try:
-        return _get_client().list_records(start, limit)
+        result = await loop.run_in_executor(
+            None, lambda: _get_client().list_records(start, limit, timeout=15.0))
+        debuglog.event(f"[dvr] records query ok ({len(result.get('rows', []))} rows)")
+        return result
     except Exception as exc:
+        debuglog.event(f"[dvr] records query FAILED: {type(exc).__name__}: {exc}")
         raise HTTPException(503, detail=str(exc))
+    finally:
+        _records_busy = False
 
 
 @app.delete("/api/records/{filename}")
@@ -411,29 +445,52 @@ async def ws_telemetry(ws: WebSocket):
     Also doubles as the liveness signal for auto-shutdown: while a browser tab is
     open it holds this socket; when it closes, the client count drops and the app
     may quit (see _maybe_autoshutdown)."""
-    global _active_clients, _dbg_last_vtx
+    global _active_clients, _vtx_stable, _vtx_pending_count
     await ws.accept()
     _active_clients += 1
     debuglog.event(f"[ws] telemetry client connected (active={_active_clients})")
     client = _get_client()
     loop = asyncio.get_running_loop()
+    err_streak = 0
     try:
         while True:
+            # Yield to a heavy DVR query so we don't pile concurrent requests onto
+            # the goggles' tiny HTTP server (which makes the gallery time out).
+            if _records_busy:
+                await asyncio.sleep(0.3)
+                continue
             try:
-                state = await loop.run_in_executor(None, client.get_device_state)
-                vtx = bool(state.get("vtx_connect"))
-                if vtx != _dbg_last_vtx:
-                    if _dbg_last_vtx is None:
-                        debuglog.event(f"[vtx] initial state: "
-                                       f"{'LINKED' if vtx else 'NO VTX'}")
-                    else:
+                # Short timeout so a slow/booting goggles doesn't stall polling.
+                state = await loop.run_in_executor(
+                    None, lambda: client.get_device_state(timeout=2.0))
+                err_streak = 0
+                raw = bool(state.get("vtx_connect"))
+                # Debounce the link state (ignore single-poll blips).
+                if _vtx_stable is None:
+                    _vtx_stable = raw
+                    _vtx_pending_count = 0
+                    debuglog.event(f"[vtx] initial state: "
+                                   f"{'LINKED' if raw else 'NO VTX'}")
+                elif raw != _vtx_stable:
+                    _vtx_pending_count += 1
+                    if _vtx_pending_count >= VTX_DEBOUNCE:
+                        _vtx_stable = raw
+                        _vtx_pending_count = 0
                         debuglog.event(f"[vtx] transition: "
-                                       f"{'NO VTX -> LINKED' if vtx else 'LINKED -> NO VTX'}")
-                    _dbg_last_vtx = vtx
+                                       f"{'NO VTX -> LINKED' if raw else 'LINKED -> NO VTX'}")
+                else:
+                    _vtx_pending_count = 0
+                # Send the DEBOUNCED link state so the UI never flaps on a blip.
+                state["vtx_connect"] = 1 if _vtx_stable else 0
                 await ws.send_json({"type": "state", "data": state})
             except Exception as exc:
-                debuglog.event(f"[ws] telemetry poll error: {type(exc).__name__}: {exc}")
-                await ws.send_json({"type": "error", "message": str(exc)})
+                # Transient poll error: hold the last state (don't flap the UI).
+                # Only report a real outage after several consecutive failures.
+                err_streak += 1
+                debuglog.event(f"[ws] telemetry poll error #{err_streak}: "
+                               f"{type(exc).__name__}: {exc}")
+                if err_streak >= 6:
+                    await ws.send_json({"type": "error", "message": str(exc)})
             await asyncio.sleep(0.5)
     except (WebSocketDisconnect, Exception):
         pass

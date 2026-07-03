@@ -47,10 +47,16 @@ class WSClient:
 
     # --- transport --------------------------------------------------------
 
-    def _post(self, endpoint: str, body_obj: dict[str, Any]) -> dict[str, Any]:
-        cmd_name = next(iter(next(iter(body_obj.values())).keys())) \
-            if body_obj and isinstance(next(iter(body_obj.values())), dict) \
-            else next(iter(body_obj))
+    def _post(self, endpoint: str, body_obj: dict[str, Any],
+              *, timeout: float | None = None) -> dict[str, Any]:
+        # Command name for logging: unwrap the SysQuery/SysCtrl group, else use
+        # the top-level key (e.g. query_record) directly.
+        top = next(iter(body_obj))
+        inner = body_obj[top]
+        if isinstance(inner, dict) and top in ("SysQuery", "SysCtrl"):
+            cmd_name = next(iter(inner), top)
+        else:
+            cmd_name = top
         data = p.szcmd(body_obj).encode("ascii")
         req = urllib.request.Request(
             self.base + endpoint, data=data, method="POST",
@@ -59,9 +65,10 @@ class WSClient:
                 "Connection": "close",
             },
         )
+        to = timeout if timeout is not None else self.timeout
         t0 = time.monotonic()
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=to) as resp:
                 raw = resp.read()
             result = p.parse_response(raw, command=cmd_name)
         except Exception as e:  # noqa: BLE001 — log then re-raise
@@ -82,11 +89,13 @@ class WSClient:
             debuglog.req("HTTP", cmd_name, dur, True, detail)
         return result
 
-    def _ajax(self, body_obj: dict[str, Any]) -> dict[str, Any]:
-        return self._post(p.EP_AJAXCOM, body_obj)
+    def _ajax(self, body_obj: dict[str, Any],
+              *, timeout: float | None = None) -> dict[str, Any]:
+        return self._post(p.EP_AJAXCOM, body_obj, timeout=timeout)
 
-    def _query(self, body_obj: dict[str, Any]) -> dict[str, Any]:
-        return self._post(p.EP_QUERYDATA, body_obj)
+    def _query(self, body_obj: dict[str, Any],
+               *, timeout: float | None = None) -> dict[str, Any]:
+        return self._post(p.EP_QUERYDATA, body_obj, timeout=timeout)
 
     # --- system query -----------------------------------------------------
 
@@ -105,9 +114,13 @@ class WSClient:
             raw=v,
         )
 
-    def get_device_state(self) -> dict[str, Any]:
-        """Live telemetry. Key field: ``vtx_connect`` (1 when an air unit is linked)."""
-        return self._ajax(p.CMD_DEVICE_STATE)["stValue"]
+    def get_device_state(self, *, timeout: float | None = None) -> dict[str, Any]:
+        """Live telemetry. Key field: ``vtx_connect`` (1 when an air unit is linked).
+
+        Pass a short ``timeout`` for the telemetry loop so a slow/booting goggles
+        doesn't stall polling for the full control timeout.
+        """
+        return self._ajax(p.CMD_DEVICE_STATE, timeout=timeout)["stValue"]
 
     def vtx_connected(self) -> bool:
         return bool(self.get_device_state().get("vtx_connect"))
@@ -135,14 +148,17 @@ class WSClient:
 
     # --- DVR records ------------------------------------------------------
 
-    def list_records(self, start: int = 0, limit: int | None = None) -> dict[str, Any]:
+    def list_records(self, start: int = 0, limit: int | None = None,
+                     *, timeout: float | None = None) -> dict[str, Any]:
         """Return ``{"total": int, "rows": [{"szFileName", "duration"}, ...]}``.
 
         ``limit=None`` requests all records (the app's default sentinel).
+        ``query_record`` is heavy on the goggles, so callers should pass a
+        generous ``timeout`` (the control-plane default is too short under load).
         """
         cmd = (p.cmd_query_record(start) if limit is None
                else p.cmd_query_record(start, limit))
-        return self._query(cmd)
+        return self._query(cmd, timeout=timeout)
 
     def record_url(self, filename: str) -> str:
         return p.record_url(filename, self.host)

@@ -80,15 +80,30 @@ def live_frames(host: str = p.DEFAULT_HOST, *, bgr: bool = True,
 class LatestFrameReader:
     """Background RTSP decoder exposing only the newest frame; self-healing."""
 
-    def __init__(self, host: str = p.DEFAULT_HOST, *, transport: str = "tcp"):
+    # After this many consecutive "connected but 0 frames" sessions we treat the
+    # goggles' single-session RTSP server as wedged and stop hammering it.
+    WEDGE_THRESHOLD = 3
+
+    def __init__(self, host: str = p.DEFAULT_HOST, *, transport: str = "tcp",
+                 start_delay: float = 0.0):
         self.host = host
         self.transport = transport
+        # Settle delay before the FIRST connect. On a restart (transport change /
+        # manual) the goggles need a moment to release the previous RTSP session;
+        # reconnecting instantly makes them hand out a dead, frame-less session.
+        self.start_delay = start_delay
         self._frame: "np.ndarray | None" = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.frames_decoded = 0
         self.last_error: BaseException | None = None
+        self.empty_sessions = 0  # consecutive connected-but-0-frame sessions
+
+    @property
+    def wedged(self) -> bool:
+        """True when the RTSP session appears stuck (connects, no frames)."""
+        return self.empty_sessions >= self.WEDGE_THRESHOLD
 
     def start(self) -> "LatestFrameReader":
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -97,6 +112,13 @@ class LatestFrameReader:
 
     def _run(self) -> None:
         import av
+
+        if self.start_delay > 0:
+            debuglog.event(f"[rtsp] settle delay {self.start_delay:.1f}s "
+                           "before first connect (restart)")
+            if self._stop.wait(self.start_delay):
+                debuglog.event("[rtsp] reader stopped")
+                return
 
         connect_fails = 0
         session = 0
@@ -155,7 +177,21 @@ class LatestFrameReader:
                                f"{self.frames_decoded} frames -> reconnect")
             finally:
                 container.close()
-            if self._stop.wait(0.1):  # brief pause before reconnect
+
+            # Track "connected but no frames" sessions. Several in a row means the
+            # goggles handed us a dead session (single-session RTSP wedged after a
+            # too-fast restart) — reconnecting fast won't help, so back off hard
+            # and let the UI tell the user to reboot the goggles.
+            if got_frame:
+                self.empty_sessions = 0
+            else:
+                self.empty_sessions += 1
+                if self.wedged:
+                    debuglog.event(f"[rtsp] WEDGED: {self.empty_sessions} sessions "
+                                   "connected with 0 frames — goggles RTSP stuck; "
+                                   "backing off (reboot goggles to recover)")
+            pause = 3.0 if self.wedged else 0.1
+            if self._stop.wait(pause):
                 return
         debuglog.event("[rtsp] reader stopped")
 
