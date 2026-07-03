@@ -37,16 +37,19 @@ jobs:
       - name: Build standalone app
         run: python build.py --clean --zip --no-verify
 
-      - name: Locate zip
-        id: zip
-        shell: bash
-        run: echo "path=$(ls dist/WS-WiFi-Stream-win-*.zip)" >> "$GITHUB_OUTPUT"
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
 
-      - name: Upload build artifact
+      - name: Build Windows installer (setup.exe)
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\wswifistream.iss'
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: WS-WiFi-Stream-windows
-          path: poc/python/dist/WS-WiFi-Stream-win-*.zip
+          path: |
+            poc/python/dist/WS-WiFi-Stream-win-*.zip
+            poc/python/dist/WS-WiFi-Stream-win-setup.exe
           if-no-files-found: error
 
       - name: Attach to release
@@ -54,4 +57,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.zip.outputs.path }}" --clobber
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            dist/WS-WiFi-Stream-win-*.zip \
+            dist/WS-WiFi-Stream-win-setup.exe --clobber
