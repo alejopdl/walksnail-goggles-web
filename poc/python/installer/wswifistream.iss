@@ -4,7 +4,7 @@
 ; Built in CI: iscc installer\wswifistream.iss
 
 #define MyAppName "WS WiFi Stream"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "1.0.0"
 #define MyAppExeName "WS-WiFi-Stream.exe"
 
 [Setup]

@@ -140,17 +140,18 @@ Para mostrarlo/ocultarlo: presioná **`O`** en el teclado.
 
 ### Configuración del stream (tecla `,`)
 
-Ajustá calidad vs. rendimiento:
+> ⚠️ **Importante:** estos ajustes afectan el video que se envía **a tu navegador** (ancho de banda / CPU), **no** la captura de las gafas. La resolución y el bitrate reales se cambian en el **menú de las gafas**.
 
 | Ajuste | Opciones | Recomendado |
 |---|---|---|
 | **Transporte** | TCP · UDP | TCP (más estable) |
-| **Resolución** | 1080p · 720p · 540p · 360p | 1080p |
 | **Calidad JPEG** | 20% – 95% | 80% |
 | **FPS máx** | 15 · 30 · 60 | 30 |
 
 > **TCP vs UDP:**  
-> TCP es más estable (recomendado). UDP puede tener menor latencia pero pierde frames si la señal WiFi falla.
+> TCP = imagen limpia y estable (recomendado). UDP = más fluido en WiFi débil pero puede mostrar artefactos. En un link bueno la latencia es parecida.
+>
+> *(La antigua opción "Resolución" se quitó: solo achicaba la imagen en el navegador, sin mejorar la calidad.)*
 
 ---
 
@@ -180,9 +181,25 @@ El navegador puede quedar abierto — simplemente cerrá la pestaña.
 
 ### El video se ve lento / con lag
 
-- Bajá la calidad en Settings (`,`) → 720p, calidad 60%
-- Activá UDP transport (menos estable pero menor latencia)
+- Bajá **Calidad JPEG** y/o **FPS máx** en Settings (`,`)
+- Probá **UDP** transport (más fluido en WiFi débil, puede tener artefactos)
 - Cerrá otras pestañas del navegador
+
+### El video se congeló y dice "Live feed stuck — reboot the goggles"
+
+Las gafas sirven **una sola** sesión de video RTSP. Al cambiar de transporte o aplicar
+settings muy seguido, esa sesión puede quedar trabada. La app espera antes de reconectar
+y detecta el estado trabado — si ves ese mensaje, **apagá y prendé las gafas** para recuperar.
+
+### La galería tarda en cargar
+
+Si las gafas tienen muchos clips en la SD (cientos), la lista tarda unos segundos.
+Ya no falla por timeout, solo tené paciencia.
+
+### El video titila "No VTX" mientras las gafas arrancan
+
+Dale unos segundos a las gafas para terminar de bootear; la detección de link tiene
+*debounce* y debería estabilizarse sola.
 
 ### macOS: "No se puede abrir porque es de un desarrollador no identificado"
 
@@ -216,7 +233,14 @@ WS-WiFi-Stream.exe --port 9999 --no-browser
 #   --host 192.168.42.1    IP de las gafas (default)
 #   --port 8080            Puerto del servidor web
 #   --no-browser           No abrir el navegador automáticamente
+#   --debug                Guardar un log de sesión (requests, reconexiones, VTX)
+#   --debug-verbose        Igual que --debug + cuerpos completos de request/response
 ```
+
+**Modo debug:** con `--debug` la app escribe un log de la sesión (cada request a las
+gafas con su timing/resultado, el ciclo de reconexión RTSP, las transiciones de VTX y
+la tasa de requests). Útil para reportar problemas de conexión. Se guarda en
+`~/Library/Logs/WS-WiFi-Stream/` (macOS) o `%LOCALAPPDATA%\WS-WiFi-Stream\logs\` (Windows).
 
 Para acceder desde otro dispositivo en la misma red (ej. tablet), abrí una terminal y usá:
 ```bash

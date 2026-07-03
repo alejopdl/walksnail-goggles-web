@@ -378,3 +378,14 @@ ws-web --bind 127.0.0.1 --port 5080
 | `gas_rec_state` | int | 1 = grabando en gafas |
 | `vtx_rec_state` | int | 1 = grabando en VTX |
 | `gas_type` | int | Tipo de gafas (3 = Goggles X) |
+
+---
+
+## Confiabilidad & Debug
+
+**Reconexión / manejo de las gafas** (aprendido en sesiones de debug reales):
+- El RTSP de las gafas es **sesión única**. Reiniciar el stream (cambio de transporte o "Apply") demasiado rápido deja la sesión trabada → el reader conecta pero recibe **0 frames**. Por eso, al reiniciar esperamos **1.5 s** (settle) para que las gafas liberen la sesión, y si detectamos "conectado sin frames" varias veces marcamos **WEDGED** y avisamos al usuario que reinicie las gafas (en vez de reconectar infinito).
+- La telemetría (`devicestate`) se pollea cada 500 ms con **timeout corto (2 s)** y el estado de VTX está **con debounce** (2 polls de acuerdo) para no titilar cuando las gafas bootean. Un error transitorio mantiene el último estado; sólo se reporta caída tras 6 fallos seguidos.
+- La galería (`query_record`) es pesada: corre **fuera del event loop**, con **timeout de 15 s**, con el `limit` **capeado**, y **pausa la telemetría** mientras consulta para no saturar el servidor HTTP chico de las gafas.
+
+**Modo debug:** correr con `--debug` (o `--debug-verbose`) genera un log de sesión con cada request a las gafas (timing/resultado), el ciclo RTSP (connect/first-frame/reconnect/wedge), transiciones de VTX y un resumen de tasa de requests. Ubicación: `~/Library/Logs/WS-WiFi-Stream/` (macOS) o `%LOCALAPPDATA%\WS-WiFi-Stream\logs\` (Windows). Implementado en `ws_client/debuglog.py`.

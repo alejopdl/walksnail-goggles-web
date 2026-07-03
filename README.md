@@ -95,10 +95,23 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 → Check that your computer is connected to the goggles WiFi, not your home WiFi.
 
 **The video is laggy**  
-→ Lower the quality in settings (gear icon). Try 720p + 60% quality.
+→ Lower **JPEG Quality** (and/or **Max FPS**) in settings (gear icon). On a weak link, try **UDP** transport.
 
 **macOS says "unidentified developer"**  
 → Right-click the app → Open → Open. You only need to do this once.
+
+**Stream settings note**  
+→ Transport / JPEG quality / max FPS tune the video sent to *your browser* (bandwidth & CPU), **not** the goggles. The real capture resolution and bitrate are set in the goggles' own menu.
+
+---
+
+## Known issues & troubleshooting
+
+- **Video freezes after switching transport or applying settings, and shows "Live feed stuck — reboot the goggles".**  
+  The goggles serve a **single** RTSP video session. Restarting the stream too soon can leave that session wedged. The app now waits before reconnecting and detects the stuck state — if you see that message, **power-cycle the goggles** to recover.
+- **UDP looks glitchy.** UDP trades reliability for latency; on a weak Wi-Fi link you'll see artifacts. Use **TCP** for a clean image (the default).
+- **The gallery takes a few seconds to load** if the goggles' SD card holds many clips (hundreds). It no longer times out, just be patient.
+- **The video keeps flickering "No VTX" while the goggles boot.** Give them a few seconds to finish starting; link detection is debounced so it should settle on its own.
 
 ---
 
@@ -130,6 +143,27 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 | **iOS** | 🚧 In progress |
 
 Tested on a different goggles model or OS? [Open an issue](https://github.com/alejopdl/walksnail-goggles-web/issues) — it helps the whole community.
+
+---
+
+## Debug mode
+
+Hit a connection/reconnection problem worth reporting? Run the app with a session log:
+
+```bash
+# macOS (installed app), from Terminal:
+"/Applications/WS WiFi Stream.app/Contents/MacOS/WS-WiFi-Stream" --debug
+# Windows: run WS-WiFi-Stream.exe --debug  from a terminal
+```
+
+It writes a timestamped log (also shown in the terminal) capturing every request to
+the goggles (timing/result), the RTSP reconnection lifecycle, VTX link transitions,
+and a request-rate summary — handy for diagnosing reconnection or gallery issues.
+Add `--debug-verbose` to also log full request/response bodies.
+
+Log location:
+- **macOS:** `~/Library/Logs/WS-WiFi-Stream/session-*.log`
+- **Windows:** `%LOCALAPPDATA%\WS-WiFi-Stream\logs\session-*.log`
 
 ---
 

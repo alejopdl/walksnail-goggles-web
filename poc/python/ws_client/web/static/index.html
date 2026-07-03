@@ -661,7 +661,7 @@
             <span class="ctrl-stat-val" id="ctrl-transport">TCP</span>
           </div>
           <div class="ctrl-group">
-            <button class="ctrl-btn" id="btn-settings" data-tip-title="Stream settings — ," data-tip="Transport (TCP/UDP), resolution, JPEG quality and max FPS for the live feed." onclick="toggleSettings()">
+            <button class="ctrl-btn" id="btn-settings" data-tip-title="Stream settings — ," data-tip="Transport (TCP/UDP), JPEG quality and max FPS for the video sent to your browser." onclick="toggleSettings()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/>
                 <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M11.4 3.2l-1.4 1.4M3.2 11.4l1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -681,21 +681,20 @@
             <span class="drawer-title">Stream Settings</span>
             <button class="drawer-close" onclick="closeSettings()" data-tip-title="Close" data-tip="Close settings (Esc).">✕</button>
           </div>
+          <div style="font-size:11px;opacity:.6;line-height:1.5;margin-bottom:14px">
+            These tune the video sent to <b>your browser</b> (bandwidth / CPU) — not the
+            goggles. The real capture resolution &amp; bitrate are set in the goggles' own menu.
+          </div>
           <div class="setting-row">
             <div class="setting-label">Transport</div>
             <div class="pill-group" id="pg-transport">
               <button class="pill active" data-val="tcp" onclick="selectPill('pg-transport',this)">TCP</button>
-              <button class="pill" data-val="udp" onclick="selectPill('pg-transport',this)">UDP (lower latency)</button>
+              <button class="pill" data-val="udp" onclick="selectPill('pg-transport',this)">UDP</button>
             </div>
           </div>
-          <div class="setting-row">
-            <div class="setting-label">Resolution</div>
-            <select class="drawer-select" id="sel-scale">
-              <option value="1.0">Full 1080p</option>
-              <option value="0.667">720p</option>
-              <option value="0.5">540p</option>
-              <option value="0.333">360p</option>
-            </select>
+          <div style="font-size:11px;opacity:.55;line-height:1.4;margin:-4px 0 12px">
+            TCP = stable, clean image (recommended). UDP = smoother on weak Wi-Fi but can show
+            artifacts. Latency is similar on a good link.
           </div>
           <div class="setting-row">
             <div class="setting-label">JPEG Quality</div>
@@ -705,6 +704,9 @@
               <span class="range-val" id="qval">82%</span>
             </div>
           </div>
+          <div style="font-size:11px;opacity:.55;line-height:1.4;margin:-4px 0 12px">
+            Compression of the stream to your browser. Lower = less bandwidth, more blocky.
+          </div>
           <div class="setting-row">
             <div class="setting-label">Max FPS</div>
             <div class="pill-group" id="pg-fps">
@@ -713,7 +715,10 @@
               <button class="pill" data-val="60" onclick="selectPill('pg-fps',this)">60</button>
             </div>
           </div>
-          <button class="btn-apply" onclick="applySettings()">↺ Apply &amp; Restart Stream</button>
+          <div style="font-size:11px;opacity:.55;line-height:1.4;margin:-4px 0 12px">
+            Caps how many frames/sec are pushed to your browser (throttle for weak links).
+          </div>
+          <button class="btn-apply" onclick="applySettings()">↺ Apply</button>
         </div>
 
       </div><!-- /video-wrapper -->
@@ -1377,13 +1382,14 @@ function selectPill(groupId, btn) {
 function applySettings() {
   const transport = document.querySelector('#pg-transport .pill.active')?.dataset.val || 'tcp';
   const fps       = parseInt(document.querySelector('#pg-fps .pill.active')?.dataset.val || '30');
-  const scale     = parseFloat(document.getElementById('sel-scale').value);
   const quality   = parseInt(document.getElementById('sl-quality').value);
-  S.settings = { transport, fps, scale, quality };
+  // scale stays 1.0 — a downscale only shrinks the browser image (no quality gain),
+  // so it's no longer exposed as a control.
+  S.settings = { transport, fps, scale: 1.0, quality };
   closeSettings();
   S.retryCount = 0;
   startStream();
-  toast(`Stream restarted — ${transport.toUpperCase()} · ${quality}% · ${fps} fps`, 'info');
+  toast(`Stream updated — ${transport.toUpperCase()} · ${quality}% · ${fps} fps`, 'info');
 }
 
 async function syncTime() {
