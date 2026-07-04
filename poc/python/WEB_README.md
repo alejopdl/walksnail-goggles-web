@@ -63,7 +63,11 @@ poc/python/
 │           └── index.html            # SPA frontend (HTML + CSS + JS)
 └── tests/
     ├── test_protocol.py              # unit tests (protocolo)
-    └── test_web.py                   # unit tests (web, todo mockeado)
+    ├── test_client.py                # unit tests (transporte keep-alive)
+    ├── test_video_reader.py          # unit tests (reader RTSP, av falso)
+    ├── test_single_instance.py       # unit tests (lock instancia única)
+    ├── test_web.py                   # unit tests (web, todo mockeado)
+    └── manual/                       # scripts contra hardware real
 ```
 
 ---
@@ -183,7 +187,8 @@ Servidor web que conecta todo: video MJPEG, telemetría WebSocket, API REST.
 |---|---|---|
 | `GET` | `/video/stream` | Stream MJPEG (`multipart/x-mixed-replace`) |
 | `GET` | `/api/stream/status` | Health del reader (frames, uptime, error) |
-| `POST` | `/api/stream/restart` | Reiniciar reader RTSP |
+| `POST` | `/api/stream/restart` | Reiniciar reader RTSP (libera la sesión + settle 3s) |
+| `GET` | `/api/config` | Config del servidor (`goggles_host`, `rtsp_host`) — funciona con gafas offline |
 | `GET` | `/api/online` | Ping gafas → `{online: bool}` |
 | `GET` | `/api/info` | Seriales, firmware, HW |
 | `GET` | `/api/state` | Telemetría completa |
@@ -192,6 +197,7 @@ Servidor web que conecta todo: video MJPEG, telemetría WebSocket, API REST.
 | `DELETE` | `/api/records/{filename}` | Borrar clip |
 | `GET` | `/api/records/{filename}/download` | Descargar clip (proxy) |
 | `WS` | `/ws/telemetry` | Push de telemetría cada 500ms |
+| `POST` | `/api/shutdown` | Cierre limpio de la app (botón Quit) |
 | `GET` | `/` | SPA frontend (static) |
 
 **Parámetros del stream MJPEG (`/video/stream`):**
@@ -306,13 +312,17 @@ CLI completo: `walksnail <command> [options]`
 ## Tests (sin hardware)
 
 ```bash
-python -m pytest tests/ -q     # 46 tests, ~0.4s
+python -m pytest tests/ -q     # 86 tests, ~10s
 ```
 
 | Suite | Qué cubre |
 |---|---|
 | `tests/test_protocol.py` | Encoding szCmd, parsing JSON, error handling |
-| `tests/test_web.py` | Endpoints REST, WebSocket, MJPEG gen, placeholders, static serving, media library |
+| `tests/test_web.py` | Endpoints REST, WebSocket, MJPEG gen, placeholders, static serving, media library, auto-shutdown, config |
+| `tests/test_client.py` | Transporte keep-alive, reconexión, no-reenvío de SysCtrl |
+| `tests/test_video_reader.py` | LatestFrameReader: settle delay, wedge detection, backoff (av falso) |
+| `tests/test_single_instance.py` | Lock de instancia única |
+| `tests/manual/` | Scripts manuales contra hardware real (NO son pytest) |
 
 ---
 

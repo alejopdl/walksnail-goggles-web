@@ -1,6 +1,6 @@
 [project]
 name = "ws-wifi-stream"
-version = "1.0.2"
+version = "1.0.3"
 description = "Cross-platform client for FPV goggles over WiFi"
 readme = "README.md"
 requires-python = ">=3.11"

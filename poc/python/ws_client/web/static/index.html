@@ -945,9 +945,11 @@ const S = {
 //  Boot
 // ════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('hdr-host').textContent = location.hostname + (location.port ? ':'+location.port : '');
-  document.getElementById('vs-offline-host').textContent = location.hostname;
+  // Placeholder until /api/config answers (the header chip and the offline
+  // overlay must show the GOGGLES address, not this web server's localhost).
+  document.getElementById('hdr-host').textContent = '…';
 
+  fetchConfig();
   fetchDeviceInfo();
   connectWS();
   startStream();
@@ -1404,6 +1406,21 @@ function updateOSD(data) {
 }
 
 // ════════════════════════════════════════════════════════════════
+//  Server config (goggles address — works even while goggles are offline)
+// ════════════════════════════════════════════════════════════════
+async function fetchConfig() {
+  try {
+    const r = await fetch('/api/config');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.goggles_host) {
+      document.getElementById('hdr-host').textContent = d.goggles_host;
+      document.getElementById('vs-offline-host').textContent = d.goggles_host;
+    }
+  } catch { /* server unavailable — placeholders remain */ }
+}
+
+// ════════════════════════════════════════════════════════════════
 //  Device info
 // ════════════════════════════════════════════════════════════════
 async function fetchDeviceInfo() {
@@ -1506,6 +1523,15 @@ function startStreamWithSettle() {
   const img = document.getElementById('stream-img');
   img.removeAttribute('src');       // closes MJPEG without triggering onerror
   img.classList.add('faded');
+
+  // Release the goggles' single RTSP session NOW: dropping the MJPEG <img>
+  // only closes the browser↔server connection — the backend reader would keep
+  // holding the RTSP session for the whole countdown. The restart endpoint
+  // stops the old reader immediately and starts the new transport with the
+  // backend's own settle delay, so it runs in parallel with this countdown
+  // (previously the two settles ran back-to-back: ~6 s instead of ~3 s).
+  fetch(`/api/stream/restart?transport=${S.settings.transport}`, { method: 'POST' })
+    .catch(() => {});               // countdown still runs; startStream() recovers
 
   // Show the settling state.
   let count = SETTLE_DELAY_S;
@@ -1738,13 +1764,32 @@ function mediaDownload(name) {
 }
 
 async function mediaDownloadSelected() {
+  // Strictly one at a time: anchor clicks only stagger the STARTS — the browser
+  // still runs the transfers concurrently, and the goggles' tiny one-shot HTTP
+  // server chokes on parallel file reads. Fetch each clip fully (into a blob)
+  // before starting the next.
   const names = [...S.mediaSelected];
   if (!names.length) return;
-  toast(`Downloading ${names.length} clip(s) sequentially…`, 'info');
-  for (const name of names) {
-    mediaDownload(name);
-    await sleep(800);   // stagger so the browser queues them, not all at once
+  let ok = 0, fail = 0;
+  for (const [i, name] of names.entries()) {
+    toast(`Downloading ${i + 1}/${names.length}: ${name}`, 'info', 2500);
+    try {
+      const r = await fetch(`/api/records/${encodeURIComponent(name)}/download`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      ok++;
+    } catch (e) {
+      fail++;
+      toast(`Download failed: ${name} (${e.message})`, 'error');
+    }
   }
+  toast(`Downloaded ${ok} clip(s)${fail ? `, ${fail} failed` : ''}`,
+        fail ? 'error' : 'success');
 }
 
 async function mediaDelete(name) {

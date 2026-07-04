@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import urllib.parse
 from typing import Any
 
 DEFAULT_HOST = "192.168.42.1"
@@ -38,7 +39,7 @@ def rtsp_url(host: str = DEFAULT_HOST) -> str:
 
 def record_url(filename: str, host: str = DEFAULT_HOST) -> str:
     """Download URL for a DVR clip returned by :func:`query_record`."""
-    return f"http://{host}/record/{filename}"
+    return f"http://{host}/record/{urllib.parse.quote(filename, safe='')}"
 
 
 def szcmd(obj: dict[str, Any]) -> str:

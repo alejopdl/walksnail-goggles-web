@@ -97,12 +97,16 @@ def _mock_goggles():
     srv._goggles_host = "127.0.0.1"
     srv._current_transport = "tcp"
     srv._stream_start_time = time.monotonic() - 100  # 100s of fake uptime
+    srv._goggles_busy = 0
+    srv._auto_shutdown_enabled = False
+    srv._active_clients = 0
 
     yield fake_client, fake_reader
 
     # Reset
     srv._client = None
     srv._reader = None
+    srv._goggles_busy = 0
 
 
 @pytest.fixture
@@ -222,9 +226,11 @@ class TestDeleteRecord:
 class TestDownloadRecord:
     """The proxy-download route, with the inline (in-browser play) variant."""
 
-    def _patch_urlopen(self, monkeypatch, payload=b"FAKEMP4DATA"):
+    def _patch_urlopen(self, monkeypatch, payload=b"FAKEMP4DATA", headers=None):
         class _Resp:
-            def __init__(self): self._sent = False
+            def __init__(self):
+                self._sent = False
+                self.headers = dict(headers or {})
             def __enter__(self): return self
             def __exit__(self, *a): return False
             def read(self, n):
@@ -250,6 +256,38 @@ class TestDownloadRecord:
         assert r.headers["content-type"].startswith("video/mp4")
         assert r.headers["content-disposition"].startswith("inline")
         assert "AvatarG0001.mp4" in r.headers["content-disposition"]
+
+    def test_forwards_content_length(self, client, monkeypatch):
+        """Browsers need the size to show real download progress."""
+        self._patch_urlopen(monkeypatch, headers={"Content-Length": "11"})
+        r = client.get("/api/records/AvatarG0001.mp4/download")
+        assert r.status_code == 200
+        assert r.headers["content-length"] == "11"
+
+    def test_502_when_goggles_unreachable(self, client, monkeypatch):
+        """The upstream is opened BEFORE streaming starts, so failure is a clean
+        502 — not a 200 with a truncated body."""
+        def _boom(*a, **k):
+            raise OSError("no route to goggles")
+        monkeypatch.setattr(srv.urllib.request, "urlopen", _boom)
+        r = client.get("/api/records/AvatarG0001.mp4/download")
+        assert r.status_code == 502
+
+    def test_busy_flag_released_after_download(self, client, monkeypatch):
+        """The goggles-busy counter must return to 0 once the transfer ends
+        (telemetry polling stays paused only during the transfer)."""
+        self._patch_urlopen(monkeypatch)
+        assert not srv._busy()
+        r = client.get("/api/records/AvatarG0001.mp4/download")
+        assert r.content == b"FAKEMP4DATA"
+        assert not srv._busy()
+
+    def test_busy_flag_released_on_upstream_error(self, client, monkeypatch):
+        def _boom(*a, **k):
+            raise OSError("down")
+        monkeypatch.setattr(srv.urllib.request, "urlopen", _boom)
+        client.get("/api/records/AvatarG0001.mp4/download")
+        assert not srv._busy()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -302,6 +340,116 @@ class TestStreamRestart:
     def test_rejects_invalid_transport(self, client):
         r = client.post("/api/stream/restart?transport=quic")
         assert r.status_code == 422
+
+    def test_restart_uses_settle_delay(self, client, _mock_goggles):
+        """The regression v1.0.2 fixed: a restarted reader must wait 3 s so the
+        goggles release their single RTSP session before we reconnect."""
+        with patch.object(srv, 'LatestFrameReader') as MockLFR:
+            MockLFR.return_value = _make_fake_reader()
+            client.post("/api/stream/restart?transport=udp")
+            _, kwargs = MockLFR.call_args
+            assert kwargs["start_delay"] == 3.0
+            assert kwargs["transport"] == "udp"
+
+
+class TestConfig:
+    def test_reports_goggles_host(self, client):
+        """The SPA shows this in 'cannot reach <goggles>' messages — it must be
+        the device address, not the web server's localhost."""
+        r = client.get("/api/config")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["goggles_host"] == "127.0.0.1"
+        assert d["rtsp_host"] == "127.0.0.1"  # falls back to goggles host
+
+    def test_rtsp_host_override(self, client, _mock_goggles):
+        srv._rtsp_host = "127.0.0.1:18554"
+        try:
+            assert client.get("/api/config").json()["rtsp_host"] == "127.0.0.1:18554"
+        finally:
+            srv._rtsp_host = ""
+
+
+class TestReaderLifecycle:
+    def test_same_transport_reuses_reader(self, _mock_goggles):
+        """Multiple tabs / stream reconnects with the same transport must share
+        one decoder thread, not restart the RTSP session."""
+        _, fake_reader = _mock_goggles
+        with patch.object(srv, 'LatestFrameReader') as MockLFR:
+            got = srv._get_or_start_reader("tcp")  # matches _current_transport
+            assert got is fake_reader
+            MockLFR.assert_not_called()
+            fake_reader.stop.assert_not_called()
+
+    def test_transport_change_restarts_with_settle(self, _mock_goggles):
+        _, fake_reader = _mock_goggles
+        with patch.object(srv, 'LatestFrameReader') as MockLFR:
+            MockLFR.return_value = _make_fake_reader()
+            srv._get_or_start_reader("udp")
+            fake_reader.stop.assert_called_once()
+            _, kwargs = MockLFR.call_args
+            assert kwargs["start_delay"] == 3.0
+        srv._reader = None
+
+    def test_first_start_has_no_settle_delay(self, _mock_goggles):
+        """Cold start must connect immediately — the delay is only for restarts."""
+        srv._reader = None
+        with patch.object(srv, 'LatestFrameReader') as MockLFR:
+            MockLFR.return_value = _make_fake_reader()
+            srv._get_or_start_reader("tcp")
+            _, kwargs = MockLFR.call_args
+            assert kwargs["start_delay"] == 0.0
+        srv._reader = None
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Auto-shutdown (packaged app quits when the last tab closes)
+# ═══════════════════════════════════════════════════════════════
+
+class TestAutoShutdown:
+    def test_shutdown_endpoint_schedules_quit(self, client, monkeypatch):
+        called = threading.Event()
+        monkeypatch.setattr(srv, "_quit_process", called.set)
+        r = client.post("/api/shutdown")
+        assert r.status_code == 200 and r.json() == {"ok": True}
+        assert called.wait(2.0), "quit must fire shortly after the reply"
+
+    def test_no_autoshutdown_when_disabled(self, monkeypatch):
+        """ws-web CLI mode: closing the tab must NOT kill the server."""
+        called = []
+        monkeypatch.setattr(srv, "_quit_process", lambda: called.append(1))
+        srv._auto_shutdown_enabled = False
+        srv._active_clients = 0
+        srv._do_autoshutdown()
+        assert not called
+
+    def test_autoshutdown_when_no_clients(self, monkeypatch):
+        called = []
+        monkeypatch.setattr(srv, "_quit_process", lambda: called.append(1))
+        srv._auto_shutdown_enabled = True
+        srv._active_clients = 0
+        srv._do_autoshutdown()
+        assert called
+
+    def test_autoshutdown_cancelled_by_reconnect(self, monkeypatch):
+        """A tab reload reconnects within the grace period — must not quit."""
+        called = []
+        monkeypatch.setattr(srv, "_quit_process", lambda: called.append(1))
+        srv._auto_shutdown_enabled = True
+        srv._active_clients = 1   # client came back before the timer fired
+        srv._do_autoshutdown()
+        assert not called
+
+    def test_ws_client_count_tracks_connections(self, client):
+        assert srv._active_clients == 0
+        with client.websocket_connect("/ws/telemetry") as ws:
+            ws.receive_json()
+            assert srv._active_clients == 1
+        # After disconnect the count returns to zero (allow a beat for teardown)
+        deadline = time.monotonic() + 2.0
+        while srv._active_clients != 0 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert srv._active_clients == 0
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -447,6 +595,16 @@ class TestStaticServing:
         # Settings drawer hardening
         assert 'id="settings-backdrop"' in html
         assert 'function closeSettings(' in html
+
+    def test_index_transport_switch_releases_session_up_front(self, client):
+        """The settle countdown must be truthful: the frontend releases the
+        goggles RTSP session at t=0 via the restart endpoint (backend settles in
+        parallel), instead of holding it for the whole countdown."""
+        html = client.get("/").text
+        assert '/api/stream/restart' in html
+        assert 'function startStreamWithSettle(' in html
+        # Goggles address comes from the server config, not location.hostname
+        assert '/api/config' in html
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -115,6 +115,31 @@ def test_concurrent_callers_share_one_connection(server):
 
 
 # ── resilience: reconnect on stale / closed sockets ───────────────────────
+def test_sysctrl_not_resent_over_stale_socket(server):
+    """A stale-socket retry may execute a command twice (the first request can
+    reach the goggles even if its response is lost). Queries are idempotent and
+    retried; SysCtrl (delete/format/reboot/settime) must fail instead."""
+    c = _client(server, timeout=2.0)
+    c._request("/ajaxcom", b"x=1", 2.0)  # prime the kept-alive connection
+    c._conn.sock.close()                  # go stale
+    with pytest.raises(Exception):
+        c._request("/ajaxcom", b"x=1", 2.0, retry_stale=False)
+    assert server.cfg["requests"] == 1, "the stale send must NOT be repeated"
+    # The connection was dropped cleanly — the next (idempotent) call recovers.
+    assert c._request("/ajaxcom", b"x=1", 2.0) == server.cfg["body"]
+
+
+def test_set_time_raises_on_stale_socket_instead_of_resending(server):
+    c = _client(server, timeout=2.0)
+    c.get_device_state(timeout=2.0)       # prime connection (query — retried)
+    requests_before = server.cfg["requests"]
+    c._conn.sock.close()
+    with pytest.raises(Exception):
+        c.set_time()
+    assert server.cfg["requests"] == requests_before, \
+        "SysCtrl settime must not be resent over a stale socket"
+
+
 def test_reconnects_after_stale_socket(server):
     c = _client(server, timeout=2.0)
     c._request("/ajaxcom", b"x=1", 2.0)

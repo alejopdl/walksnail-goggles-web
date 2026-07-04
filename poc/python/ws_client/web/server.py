@@ -45,7 +45,27 @@ from ws_client.video import LatestFrameReader
 VTX_DEBOUNCE = 2
 _vtx_stable: "bool | None" = None    # debounced VTX link state (what the UI sees)
 _vtx_pending_count = 0               # consecutive polls disagreeing with _vtx_stable
-_records_busy = False                # a heavy DVR query is in flight; telemetry yields
+# Count of heavy goggles operations in flight (DVR list query or a clip download).
+# While > 0 the telemetry loop yields so we don't pile concurrent requests onto
+# the goggles' tiny one-shot HTTP server.
+_goggles_busy = 0
+_busy_lock = threading.Lock()
+
+
+def _busy() -> bool:
+    return _goggles_busy > 0
+
+
+def _busy_enter() -> None:
+    global _goggles_busy
+    with _busy_lock:
+        _goggles_busy += 1
+
+
+def _busy_exit() -> None:
+    global _goggles_busy
+    with _busy_lock:
+        _goggles_busy = max(0, _goggles_busy - 1)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -331,6 +351,20 @@ async def stream_restart(transport: str = Query("tcp", pattern="^(tcp|udp)$")):
 
 # ── System -----------------------------------------------------------------
 
+@app.get("/api/config")
+async def api_config():
+    """Server-side configuration the SPA can't infer from ``location``.
+
+    ``goggles_host`` is the device address (the web server itself usually runs
+    on localhost) — used by the UI for "cannot reach <goggles>" messages.
+    Never touches the goggles, so it works while they are offline.
+    """
+    return {
+        "goggles_host": _goggles_host,
+        "rtsp_host": _rtsp_host or _goggles_host,
+    }
+
+
 @app.get("/api/online")
 async def api_online():
     """Ping the goggles. Returns {online: bool} — never raises."""
@@ -384,13 +418,12 @@ async def api_records(start: int = 0, limit: int = 500):
     """List DVR clips. Returns {total, rows: [{szFileName, duration}, ...]}.
 
     ``query_record`` is heavy on the goggles, so we: cap an over-large limit,
-    run it off the event loop, give it a generous timeout, and flag
-    ``_records_busy`` so the telemetry loop pauses (no concurrent hammering).
+    run it off the event loop, give it a generous timeout, and mark the goggles
+    busy so the telemetry loop pauses (no concurrent hammering).
     """
-    global _records_busy
     limit = max(1, min(limit, 5000))  # the goggles hold few clips; huge limits are slow
     loop = asyncio.get_running_loop()
-    _records_busy = True
+    _busy_enter()
     debuglog.event(f"[dvr] records query start (limit={limit})")
     try:
         result = await loop.run_in_executor(
@@ -401,7 +434,7 @@ async def api_records(start: int = 0, limit: int = 500):
         debuglog.event(f"[dvr] records query FAILED: {type(exc).__name__}: {exc}")
         raise HTTPException(503, detail=str(exc))
     finally:
-        _records_busy = False
+        _busy_exit()
 
 
 @app.delete("/api/records/{filename}")
@@ -421,21 +454,40 @@ async def api_download(filename: str, inline: bool = False):
     browser ``<video>`` element plays it in place instead of forcing a save.
     The goggles' file server has no HTTP Range support, so inline playback is
     progressive-from-start (no seeking) — acceptable for the short DVR clips.
+
+    The upstream connection is opened *before* the response starts so an
+    unreachable goggles yields a clean 502 (not a truncated 200), and the
+    goggles stay flagged busy for the whole transfer so telemetry polling
+    doesn't compete with it on the device's tiny HTTP server.
     """
     url = p.record_url(filename, _goggles_host)
+    loop = asyncio.get_running_loop()
+    _busy_enter()
+    try:
+        resp = await loop.run_in_executor(
+            None, lambda: urllib.request.urlopen(url, timeout=120))
+    except Exception as exc:
+        _busy_exit()
+        debuglog.event(f"[dvr] download open FAILED {filename}: "
+                       f"{type(exc).__name__}: {exc}")
+        raise HTTPException(502, detail=f"goggles did not serve {filename}: {exc}")
 
     def _generate():
-        with urllib.request.urlopen(url, timeout=120) as resp:
-            while chunk := resp.read(1 << 16):
-                yield chunk
+        try:
+            with resp:
+                while chunk := resp.read(1 << 16):
+                    yield chunk
+        finally:
+            _busy_exit()
 
     disposition = "inline" if inline else "attachment"
     safe_filename = filename.replace('"', '').replace('\n', '').replace('\r', '')
-    return StreamingResponse(
-        _generate(),
-        media_type="video/mp4",
-        headers={"Content-Disposition": f'{disposition}; filename="{safe_filename}"'},
-    )
+    headers = {"Content-Disposition": f'{disposition}; filename="{safe_filename}"'}
+    # Forward the size so browsers can show real download progress.
+    length = resp.headers.get("Content-Length")
+    if length:
+        headers["Content-Length"] = length
+    return StreamingResponse(_generate(), media_type="video/mp4", headers=headers)
 
 
 # ── Telemetry WebSocket ----------------------------------------------------
@@ -456,9 +508,9 @@ async def ws_telemetry(ws: WebSocket):
     err_streak = 0
     try:
         while True:
-            # Yield to a heavy DVR query so we don't pile concurrent requests onto
-            # the goggles' tiny HTTP server (which makes the gallery time out).
-            if _records_busy:
+            # Yield to a heavy DVR query/download so we don't pile concurrent
+            # requests onto the goggles' tiny HTTP server (gallery timeouts).
+            if _busy():
                 await asyncio.sleep(0.3)
                 continue
             try:

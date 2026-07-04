@@ -2,6 +2,41 @@
 
 All notable changes to WS WiFi Stream are documented here.
 
+## 1.0.3 (pre-release — pending on-device validation)
+
+### Fixed
+- **Transport switch is now really ~3 s (desktop).** The countdown overlay used to
+  run *before* the goggles' RTSP session was actually released: the backend kept the
+  old session open during the countdown and only then applied its own 3 s settle —
+  ~6 s total, with the "Closing old session…" message shown while the session was
+  still open. The desktop UI now releases the session the moment you hit Apply (via
+  the stream-restart endpoint) and the countdown runs in parallel — matching how the
+  Android app already did it.
+- **"Goggles offline" now names the right address (desktop).** The offline overlay
+  and the header chip showed the web server's own host (`localhost`) instead of the
+  goggles' address. A new `/api/config` endpoint exposes the configured goggles host
+  and the UI uses it.
+- **Batch downloads are truly one-at-a-time (desktop + Android).** Previously only
+  the download *starts* were staggered; the transfers still ran in parallel, which
+  the goggles' tiny one-shot HTTP file server handles poorly. Both apps now wait for
+  each clip to finish before starting the next.
+- **Destructive commands are never auto-resent (desktop).** The keep-alive control
+  client retried any request once over a stale socket; for mutating commands
+  (delete clip, format SD, reboot, set time) a retry could execute the command twice
+  if the first request had reached the goggles but its response was lost. Queries
+  are still retried; SysCtrl commands now fail cleanly instead.
+- **Telemetry now also pauses during clip downloads (desktop).** It already paused
+  during the heavy DVR list query; the same courtesy now applies while a clip is
+  being streamed off the goggles. (Android already paused polling for the whole
+  gallery.)
+- **DVR filenames are URL-encoded (desktop + Android)** so an unusual filename can't
+  produce a malformed download URL.
+
+### Improved
+- Desktop clip downloads now forward the file size (`Content-Length`), so the
+  browser shows real download progress; an unreachable goggles yields a clean
+  error instead of a silently truncated file.
+
 ## 1.0.2
 
 ### Fixed / Improved

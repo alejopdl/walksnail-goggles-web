@@ -46,6 +46,13 @@ def test_urls():
     assert p.rtsp_url("10.0.0.5") == "rtsp://10.0.0.5/live.ch01"
 
 
+def test_record_url_encodes_unsafe_filenames():
+    # Normal AvatarG####.mp4 names pass through unchanged (tested above); a
+    # rogue/odd filename must not break the URL or escape the /record/ path.
+    assert p.record_url("my clip.mp4") == "http://192.168.42.1/record/my%20clip.mp4"
+    assert p.record_url("a/b.mp4") == "http://192.168.42.1/record/a%2Fb.mp4"
+
+
 def test_parse_ok():
     raw = json.dumps({"nRetVal": 0, "stValue": {"online": 1}})
     assert parse_response(raw)["stValue"]["online"] == 1

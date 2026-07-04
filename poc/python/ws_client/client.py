@@ -100,12 +100,17 @@ class WSClient:
             raise http.client.HTTPException(f"HTTP {status} {resp.reason}")
         return raw
 
-    def _request(self, endpoint: str, data: bytes, timeout: float) -> bytes:
+    def _request(self, endpoint: str, data: bytes, timeout: float,
+                 *, retry_stale: bool = True) -> bytes:
         """Send a POST, transparently reconnecting once if a reused socket was stale.
 
         Serialised by ``_conn_lock`` so concurrent callers (multiple browser tabs,
         telemetry + a records query) share the one connection instead of each
         opening their own — which would reintroduce the churn we're avoiding.
+
+        ``retry_stale=False`` disables the reconnect-and-resend: if the first
+        request reached the goggles but the response was lost, a resend would
+        execute the command twice. Mutating commands (SysCtrl) must not risk that.
         """
         with self._conn_lock:
             reused = self._conn is not None
@@ -113,8 +118,8 @@ class WSClient:
                 return self._send(endpoint, data, timeout)
             except Exception:  # noqa: BLE001
                 self._close_conn()
-                if not reused:
-                    raise  # fresh connection failed → the goggles are unreachable
+                if not reused or not retry_stale:
+                    raise  # fresh conn failed (unreachable) or resend is unsafe
                 # A kept-alive socket the server closed under us — reconnect once,
                 # and leave a clean (closed) state if that retry also fails.
                 try:
@@ -137,7 +142,9 @@ class WSClient:
         to = timeout if timeout is not None else self.timeout
         t0 = time.monotonic()
         try:
-            raw = self._request(endpoint, data, to)
+            # Queries are idempotent → safe to resend once over a stale socket.
+            # SysCtrl mutates state (delete/format/reboot/settime) → never resend.
+            raw = self._request(endpoint, data, to, retry_stale=(top != "SysCtrl"))
             result = p.parse_response(raw, command=cmd_name)
         except Exception as e:  # noqa: BLE001 — log then re-raise
             if debuglog.enabled():
