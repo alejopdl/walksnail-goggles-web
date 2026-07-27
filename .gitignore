@@ -5,7 +5,6 @@ captures/
 *.dex
 
 # Local-only notes & dev tooling — not published
-PHASE*.md
 tools/
 poc/python/tests/test_integration_live.py
 poc/python/tests/test_webapp_verify.py
@@ -34,6 +33,3 @@ dist/
 
 # Flutter mobile app lives in a separate location, not in this public repo
 walksnail_mobile/
-
-# Local planning doc
-PLAN.md
