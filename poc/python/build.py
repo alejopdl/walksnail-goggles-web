@@ -6,12 +6,18 @@ Usage:
     python build.py              # build for current platform
     python build.py --clean      # delete dist/ build/ first
     python build.py --zip        # also create a distributable zip
+    python build.py --dmg        # also create a .dmg (macOS only)
 
-Output:
-    dist/WS-WiFi-Stream/            → folder (all platforms)
-    dist/WS-WiFi-Stream.app         → macOS app bundle (double-click to run)
-    dist/WS-WiFi-Stream-mac.zip     → macOS distributable
-    dist/WS-WiFi-Stream-win.zip     → Windows distributable
+Output (the arch suffix is the host's — arm64 or x86_64):
+    dist/WS-WiFi-Stream/                  → folder (all platforms)
+    dist/WS-WiFi-Stream.app               → macOS app bundle (double-click to run)
+    dist/WS-WiFi-Stream-mac-<arch>.zip    → macOS distributable
+    dist/WS-WiFi-Stream-mac-<arch>.dmg    → macOS installer image
+    dist/WS-WiFi-Stream-win-<arch>.zip    → Windows distributable
+
+PyInstaller cannot cross-compile: each artifact must be built on its own
+platform AND its own architecture. Apple Silicon builds run locally; the
+Intel Mac and Windows builds run in GitHub Actions.
 """
 from __future__ import annotations
 
@@ -78,6 +84,34 @@ def make_zip() -> None:
     size_mb = zip_path.stat().st_size / 1024 / 1024
     print(f"  ✓ {zip_name} ({size_mb:.0f} MB)")
     return zip_path
+
+
+def make_dmg() -> Path | None:
+    """macOS only — wrap the .app in a compressed disk image."""
+    if platform.system().lower() != "darwin":
+        print("  ⚠ --dmg only applies to macOS, skipping")
+        return None
+
+    app = DIST / "WS-WiFi-Stream.app"
+    if not app.exists():
+        print(f"  ⚠ {app} not found — cannot build a .dmg")
+        return None
+
+    arch = platform.machine().lower()
+    dmg_path = DIST / f"WS-WiFi-Stream-mac-{arch}.dmg"
+    dmg_path.unlink(missing_ok=True)
+
+    print(f"\n  Creating {dmg_path.name}…")
+    run(["hdiutil", "create",
+         "-volname", "WS WiFi Stream",
+         "-srcfolder", str(app),
+         "-ov", "-format", "UDZO",
+         "-quiet",
+         str(dmg_path)])
+
+    size_mb = dmg_path.stat().st_size / 1024 / 1024
+    print(f"  ✓ {dmg_path.name} ({size_mb:.0f} MB)")
+    return dmg_path
 
 
 def verify() -> None:
@@ -149,6 +183,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build WS WiFi Stream standalone app")
     parser.add_argument("--clean", action="store_true", help="Delete dist/ build/ first")
     parser.add_argument("--zip", action="store_true", help="Create distributable zip")
+    parser.add_argument("--dmg", action="store_true", help="Create a .dmg (macOS only)")
     parser.add_argument("--no-verify", action="store_true", help="Skip post-build verify")
     args = parser.parse_args()
 
@@ -162,6 +197,9 @@ def main() -> None:
 
     if args.zip:
         make_zip()
+
+    if args.dmg:
+        make_dmg()
 
     print_summary()
 

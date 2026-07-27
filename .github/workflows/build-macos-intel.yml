@@ -1,0 +1,104 @@
+name: Build macOS (Intel)
+
+# Builds the Intel (x86_64) macOS app. PyInstaller cannot cross-compile — not
+# across operating systems and not across CPU architectures — so an Intel build
+# needs a real Intel Mac. The Apple Silicon (arm64) build is made locally on the
+# maintainer's Mac; this workflow covers the Intel half.
+#
+# Runner: macos-15-intel is a *standard* runner (free and unlimited on public
+# repositories) and is the last x86_64 macOS image GitHub will offer — it is
+# available until August 2027, after which Actions drops x86_64 macOS entirely.
+# The older macos-13 Intel image was retired in December 2025.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach the build to (leave empty to only produce an artifact)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-intel:
+    runs-on: macos-15-intel
+    defaults:
+      run:
+        working-directory: poc/python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Confirm we are really on Intel
+        # A silent fallback to an arm64 runner would produce an artifact named
+        # "x86_64" that cannot run on any Intel Mac. Fail loudly instead.
+        run: |
+          arch="$(python -c 'import platform; print(platform.machine())')"
+          echo "Runner architecture: $arch"
+          if [ "$arch" != "x86_64" ]; then
+            echo "::error::Expected x86_64, got $arch — refusing to mislabel the build"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[web]"
+          pip install pyinstaller
+
+      - name: Pin opencv for wider macOS compatibility
+        # The macOS floor of the finished app is whatever its least portable
+        # wheel demands. Current opencv-python x86_64 wheels are tagged
+        # macosx_14_0, which would lock the app to macOS 14+ and exclude every
+        # Intel Mac that cannot upgrade past Monterey or Ventura. 4.9.0.80 ships
+        # a macosx_10_16 wheel, bringing the floor down to av's macosx_11_0.
+        # Safe to pin: we only use OpenCV 2.x-era calls (imshow, putText,
+        # circle, resize, imwrite, waitKey).
+        run: pip install "opencv-python==4.9.0.80"
+
+      - name: Report the resulting macOS floor
+        # Printed into the log so the minimum supported macOS is auditable per
+        # build instead of assumed.
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+          for pkg in ("opencv-python", "av", "numpy"):
+              try:
+                  print(f"{pkg:16} {md.version(pkg)}")
+              except md.PackageNotFoundError:
+                  print(f"{pkg:16} (absent)")
+          PY
+          echo "--- Mach-O minimum OS versions of bundled dylibs ---"
+          python -c "import cv2, av, os; print(os.path.dirname(cv2.__file__)); print(os.path.dirname(av.__file__))"
+
+      - name: Build standalone app
+        # No --no-verify here: the verify step runs the freshly built binary's
+        # --help on this Intel machine, which is the only smoke test of the
+        # Intel artifact we can get without owning an Intel Mac.
+        run: python build.py --clean --zip --dmg
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WS-WiFi-Stream-macos-intel
+          path: |
+            poc/python/dist/WS-WiFi-Stream-mac-x86_64.zip
+            poc/python/dist/WS-WiFi-Stream-mac-x86_64.dmg
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: github.event_name == 'release' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          gh release upload "$TAG" \
+            dist/WS-WiFi-Stream-mac-x86_64.zip \
+            dist/WS-WiFi-Stream-mac-x86_64.dmg --clobber
