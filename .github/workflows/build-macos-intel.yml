@@ -53,7 +53,7 @@ jobs:
           pip install -e ".[web]"
           pip install pyinstaller
 
-      - name: Pin opencv for wider macOS compatibility
+      - name: Pin opencv/numpy for wider macOS compatibility
         # The macOS floor of the finished app is whatever its least portable
         # wheel demands. Current opencv-python x86_64 wheels are tagged
         # macosx_14_0, which would lock the app to macOS 14+ and exclude every
@@ -61,28 +61,36 @@ jobs:
         # a macosx_10_16 wheel, bringing the floor down to av's macosx_11_0.
         # Safe to pin: we only use OpenCV 2.x-era calls (imshow, putText,
         # circle, resize, imwrite, waitKey).
-        run: pip install "opencv-python==4.9.0.80"
+        #
+        # numpy<2 is not optional here — opencv 4.9.0.80 was compiled against
+        # the NumPy 1.x C ABI and `import cv2` dies with
+        # "numpy.core.multiarray failed to import" under NumPy 2.
+        run: pip install "opencv-python==4.9.0.80" "numpy<2"
 
-      - name: Report the resulting macOS floor
-        # Printed into the log so the minimum supported macOS is auditable per
-        # build instead of assumed.
-        run: |
-          python - <<'PY'
-          import importlib.metadata as md
-          for pkg in ("opencv-python", "av", "numpy"):
-              try:
-                  print(f"{pkg:16} {md.version(pkg)}")
-              except md.PackageNotFoundError:
-                  print(f"{pkg:16} (absent)")
-          PY
-          echo "--- Mach-O minimum OS versions of bundled dylibs ---"
-          python -c "import cv2, av, os; print(os.path.dirname(cv2.__file__)); print(os.path.dirname(av.__file__))"
+      - name: Verify the pinned stack actually imports
+        # Guards the pin above. A binary-incompatible pin does NOT fail the
+        # build — PyInstaller happily bundles a cv2 that explodes on import,
+        # and the app only breaks on the user's machine. Import it here, on
+        # this Intel runner, before anything gets packaged.
+        run: python -c "import numpy, cv2, av; print('cv2', cv2.__version__, '| numpy', numpy.__version__, '| av', av.__version__)"
 
       - name: Build standalone app
         # No --no-verify here: the verify step runs the freshly built binary's
         # --help on this Intel machine, which is the only smoke test of the
         # Intel artifact we can get without owning an Intel Mac.
         run: python build.py --clean --zip --dmg
+
+      - name: Measure the real macOS floor of the built app
+        # Reads it off the shipped Mach-O binaries rather than trusting the
+        # wheel tags. This number is what the README promises users, so it is
+        # measured on every build instead of assumed once.
+        run: |
+          floor=$(find dist/WS-WiFi-Stream.app \( -name '*.dylib' -o -name '*.so' -o -type f -perm +111 \) -print0 \
+            | xargs -0 -n1 otool -l 2>/dev/null \
+            | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; f=0}' \
+            | sort -V | tail -1)
+          echo "Highest minos among bundled binaries: ${floor:-unknown}"
+          echo "### Intel build requires macOS \`${floor:-unknown}\` or newer" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
