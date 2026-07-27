@@ -4,6 +4,13 @@ All notable changes to WS WiFi Stream are documented here.
 
 ## 1.0.3 (pre-release — pending on-device validation)
 
+### Added
+- **Intel Mac build.** macOS downloads were Apple Silicon only, so Intel Mac owners
+  had nothing to run. There is now a second pair of macOS downloads —
+  `WS-WiFi-Stream-mac-x86_64.dmg` / `.zip` — built on a real Intel machine, since
+  PyInstaller cannot cross-compile between architectures. See the README for which
+  one your Mac needs.
+
 ### Fixed
 - **Transport switch is now really ~3 s (desktop).** The countdown overlay used to
   run *before* the goggles' RTSP session was actually released: the backend kept the

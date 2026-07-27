@@ -29,11 +29,20 @@ Live video · Battery & signal telemetry · DVR recordings manager.
 
 Grab the latest from [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases).
 
-### Mac (Apple Silicon)
+### Mac
 
-1. Download **`WS-WiFi-Stream-mac-arm64.dmg`** → open it → drag **WS WiFi Stream** to **Applications**.
+There are two Mac builds — pick the one that matches your processor. Not sure
+which you have?  → **apple menu → About This Mac**. If it says *Apple M1/M2/M3/M4*
+you want **arm64**; if it says *Intel*, you want **x86_64**.
+
+| Your Mac | Download | Needs |
+|---|---|---|
+| Apple Silicon (M1 and newer) | **`WS-WiFi-Stream-mac-arm64.dmg`** | macOS 14 Sonoma or newer |
+| Intel | **`WS-WiFi-Stream-mac-x86_64.dmg`** | macOS 12 Monterey or newer |
+
+1. Open the `.dmg` → drag **WS WiFi Stream** to **Applications**.
 2. First launch: right-click the app → **Open** → **Open** *(macOS security prompt)*.
-   *(Prefer no install? The `…-mac-arm64.zip` is a portable version — unzip and run.)*
+   *(Prefer no install? The matching `.zip` is a portable version — unzip and run.)*
 
 ### Windows
 
