@@ -277,7 +277,7 @@ Si querés compilar vos mismo:
 ```bash
 # Clonar
 git clone https://github.com/alejopdl/walksnail-goggles-web
-cd walksnail-goggles-web/poc/python
+cd walksnail-goggles-web/apps/desktop
 
 # Crear entorno
 python3 -m venv .venv

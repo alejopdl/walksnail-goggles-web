@@ -199,7 +199,7 @@ Log location:
 
 ## For developers
 
-Want to run from source or contribute? See [WEB_README.md](poc/python/WEB_README.md).
+Want to run from source or contribute? See [WEB_README.md](apps/desktop/WEB_README.md).
 
 ---
 

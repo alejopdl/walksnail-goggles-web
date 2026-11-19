@@ -20,7 +20,7 @@ jobs:
       PYTHONUTF8: '1'
     defaults:
       run:
-        working-directory: poc/python
+        working-directory: apps/desktop
     steps:
       - uses: actions/checkout@v4
 
@@ -48,8 +48,8 @@ jobs:
         with:
           name: WS-WiFi-Stream-windows
           path: |
-            poc/python/dist/WS-WiFi-Stream-win-*.zip
-            poc/python/dist/WS-WiFi-Stream-win-setup.exe
+            apps/desktop/dist/WS-WiFi-Stream-win-*.zip
+            apps/desktop/dist/WS-WiFi-Stream-win-setup.exe
           if-no-files-found: error
 
       - name: Attach to release
