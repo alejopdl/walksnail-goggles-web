@@ -81,7 +81,7 @@ tests/          test_protocol.py  (pytest; no device needed)
 
 Run the tests (no device needed):
 ```bash
-pip install pytest && pytest -q
+pip install -e ".[web,dev]" && pytest -q
 ```
 
 ## Status

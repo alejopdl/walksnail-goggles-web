@@ -312,6 +312,7 @@ CLI completo: `walksnail <command> [options]`
 ## Tests (sin hardware)
 
 ```bash
+pip install -e ".[web,dev]"
 python -m pytest tests/ -q     # 86 tests, ~10s
 ```
 
