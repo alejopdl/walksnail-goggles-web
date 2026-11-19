@@ -38,7 +38,8 @@ class GogglesState extends ChangeNotifier {
   int _vtxPending = 0;
   bool get isVtxConnected => _stableVtx;
 
-  bool _paused = false;
+  DateTime? _pausedAt; // non-null while paused
+  bool _polling = false;
   Timer? _pollTimer;
 
   GogglesState({
@@ -60,14 +61,24 @@ class GogglesState extends ChangeNotifier {
 
   /// Pause polling (e.g. while the gallery is open) so a heavy DVR query /
   /// download doesn't compete with telemetry on the goggles.
-  void pausePolling() => _paused = true;
+  void pausePolling() => _pausedAt ??= DateTime.now();
   void resumePolling() {
-    _paused = false;
+    final pausedAt = _pausedAt;
+    if (pausedAt != null) {
+      // Paused time isn't silence from the goggles: without this, the first
+      // dropped poll after closing the gallery reads as offline and restarts
+      // the video player.
+      _lastOk = _lastOk.add(DateTime.now().difference(pausedAt));
+      _pausedAt = null;
+    }
     _tick();
   }
 
   Future<void> _tick() async {
-    if (_paused) return;
+    // One poll at a time: when the goggles answer slower than the interval,
+    // skip ticks instead of stacking concurrent requests on their HTTP server.
+    if (_pausedAt != null || _polling) return;
+    _polling = true;
     try {
       final newState = await _api.getDeviceState();
       _gogglesReachable = true;
@@ -101,6 +112,8 @@ class GogglesState extends ChangeNotifier {
         _vtxPending = 0;
         notifyListeners();
       }
+    } finally {
+      _polling = false;
     }
   }
 

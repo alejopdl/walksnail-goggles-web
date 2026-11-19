@@ -1,4 +1,4 @@
-// Tests for the telemetry hysteresis in GogglesState.
+// Tests for GogglesState polling and its telemetry hysteresis.
 //
 // Mirrors the desktop fix: a brief control-plane poll failure must NOT flap the
 // UI offline (the goggles are still there) — only sustained silence, past the
@@ -13,12 +13,24 @@ import 'package:ws_wifi_stream/services/ws_api.dart';
 class _FakeApi extends WSApi {
   bool fail = false;
   DeviceState next;
+  Duration latency = Duration.zero;
+  int calls = 0;
+  int inFlight = 0;
+  int maxInFlight = 0;
   _FakeApi(this.next);
 
   @override
   Future<DeviceState> getDeviceState() async {
-    if (fail) throw Exception('telemetry drop');
-    return next;
+    calls++;
+    inFlight++;
+    if (inFlight > maxInFlight) maxInFlight = inFlight;
+    try {
+      await Future.delayed(latency);
+      if (fail) throw Exception('telemetry drop');
+      return next;
+    } finally {
+      inFlight--;
+    }
   }
 }
 
@@ -73,6 +85,49 @@ void main() {
     api.fail = false; // link is back
     await Future.delayed(const Duration(milliseconds: 120));
     expect(g.gogglesReachable, isTrue);
+    g.dispose();
+  });
+
+  test('never has more than one poll in flight when the goggles are slow',
+      () async {
+    final api = _FakeApi(_linked)
+      ..latency = const Duration(milliseconds: 100);
+    final g = GogglesState(
+      api: api,
+      pollInterval: const Duration(milliseconds: 20),
+      offlineGrace: const Duration(milliseconds: 400),
+    );
+    await Future.delayed(const Duration(milliseconds: 350));
+    g.pausePolling();
+    await Future.delayed(const Duration(milliseconds: 150)); // let it drain
+    expect(api.maxInFlight, 1);
+    expect(api.calls, greaterThanOrEqualTo(3),
+        reason: 'polling must keep going, one request after another');
+    g.dispose();
+  });
+
+  test('time spent paused does not count toward going offline', () async {
+    final api = _FakeApi(_linked);
+    final g = GogglesState(
+      api: api,
+      pollInterval: const Duration(milliseconds: 20),
+      offlineGrace: const Duration(milliseconds: 300),
+    );
+    await Future.delayed(const Duration(milliseconds: 120));
+    expect(g.isVtxConnected, isTrue);
+
+    g.pausePolling(); // gallery open
+    await Future.delayed(const Duration(milliseconds: 500)); // longer than grace
+    api.fail = true; // first poll after closing the gallery drops
+    g.resumePolling();
+    await Future.delayed(const Duration(milliseconds: 10));
+    expect(g.gogglesReachable, isTrue,
+        reason: 'one dropped poll after a pause must not read as offline');
+    expect(g.isVtxConnected, isTrue);
+
+    await Future.delayed(const Duration(milliseconds: 400)); // past grace
+    expect(g.gogglesReachable, isFalse,
+        reason: 'sustained silence after resuming still reads offline');
     g.dispose();
   });
 }
