@@ -70,6 +70,17 @@ def _busy_exit() -> None:
     with _busy_lock:
         _goggles_busy = max(0, _goggles_busy - 1)
 
+
+# Held for a whole clip transfer (download or inline playback). A clip can take
+# minutes, so another transfer, a list or a command is refused rather than queued.
+_transfer_lock = threading.Lock()
+_TRANSFER_BUSY = "The goggles are busy sending a clip. Wait for it to finish, then try again."
+
+
+def _refuse_during_transfer() -> None:
+    if _transfer_lock.locked():
+        raise HTTPException(409, detail=_TRANSFER_BUSY)
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 # ---------------------------------------------------------------------------
@@ -465,6 +476,7 @@ def api_state():
 @app.post("/api/settime")
 def api_settime():
     """Sync the goggles clock to the server's local time."""
+    _refuse_during_transfer()
     try:
         _get_client().set_time()
         return {"ok": True}
@@ -482,6 +494,7 @@ async def api_records(start: int = 0, limit: int = 500):
     run it off the event loop, give it a generous timeout, and mark the goggles
     busy so the telemetry loop pauses (no concurrent hammering).
     """
+    _refuse_during_transfer()
     limit = max(1, min(limit, 5000))  # the goggles hold few clips; huge limits are slow
     loop = asyncio.get_running_loop()
     _busy_enter()
@@ -500,6 +513,7 @@ async def api_records(start: int = 0, limit: int = 500):
 
 @app.delete("/api/records/{filename}")
 def api_delete(filename: str):
+    _refuse_during_transfer()
     try:
         _get_client().delete_record(filename)
         return {"ok": True}
@@ -507,22 +521,29 @@ def api_delete(filename: str):
         raise HTTPException(500, detail=str(exc))
 
 
+def _end_transfer(conn_lock) -> None:
+    conn_lock.release()
+    _transfer_lock.release()
+    _busy_exit()
+
+
 class _UpstreamResponse(StreamingResponse):
-    """Streams a goggles response, then closes it and clears the busy flag as
+    """Streams a goggles response, then closes it and ends the transfer as
     soon as the browser is done or gone. When the browser disconnects (cancelled
     download, closed player) Starlette abandons the body iterator, so cleanup in
     the generator would wait for garbage collection (~50 s measured)."""
 
-    def __init__(self, upstream, *args, **kwargs) -> None:
+    def __init__(self, upstream, conn_lock, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._upstream = upstream
+        self._conn_lock = conn_lock
 
     async def __call__(self, scope, receive, send) -> None:
         try:
             await super().__call__(scope, receive, send)
         finally:
             self._upstream.close()
-            _busy_exit()
+            _end_transfer(self._conn_lock)
 
 
 @app.get("/api/records/{filename}/download")
@@ -538,15 +559,33 @@ async def api_download(filename: str, inline: bool = False):
     unreachable goggles yields a clean 502 (not a truncated 200), and the
     goggles stay flagged busy for the whole transfer so telemetry polling
     doesn't compete with it on the device's tiny HTTP server.
+
+    Only one transfer at a time: another one is refused with a 409. The
+    transfer also holds the control client's connection lock, so no command or
+    query reaches the goggles while the clip is being read (CONSTRAINT-001).
     """
     url = p.record_url(filename, _goggles_host)
+    conn_lock = _get_client()._conn_lock
     loop = asyncio.get_running_loop()
-    _busy_enter()
+
+    def _open():
+        # The batch download asks for the next clip as soon as the previous body
+        # ends, which can be a moment before that response's cleanup has run.
+        if not _transfer_lock.acquire(timeout=1.0):
+            raise HTTPException(409, detail=_TRANSFER_BUSY)
+        _busy_enter()
+        conn_lock.acquire()  # waits out an in-flight poll, list or command
+        try:
+            return urllib.request.urlopen(url, timeout=120)
+        except Exception:
+            _end_transfer(conn_lock)
+            raise
+
     try:
-        resp = await loop.run_in_executor(
-            None, lambda: urllib.request.urlopen(url, timeout=120))
+        resp = await loop.run_in_executor(None, _open)
+    except HTTPException:
+        raise
     except Exception as exc:
-        _busy_exit()
         debuglog.event(f"[dvr] download open FAILED {filename}: "
                        f"{type(exc).__name__}: {exc}")
         raise HTTPException(502, detail=f"goggles did not serve {filename}: {exc}")
@@ -562,14 +601,16 @@ async def api_download(filename: str, inline: bool = False):
     length = resp.headers.get("Content-Length")
     if length:
         headers["Content-Length"] = length
-    return _UpstreamResponse(resp, _generate(), media_type="video/mp4", headers=headers)
+    return _UpstreamResponse(resp, conn_lock, _generate(), media_type="video/mp4",
+                             headers=headers)
 
 
 # ── Telemetry WebSocket ----------------------------------------------------
 
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(ws: WebSocket):
-    """Push devicestate JSON every 500 ms. Sends {type, data} or {type, message}.
+    """Push devicestate JSON every 500 ms. Sends {type, data} or {type, message},
+    and {type: "busy", busy} when a DVR list or clip transfer starts or ends.
 
     Also doubles as the liveness signal for auto-shutdown: while a browser tab is
     open it holds this socket; when it closes, the client count drops and the app
@@ -581,11 +622,16 @@ async def ws_telemetry(ws: WebSocket):
     client = _get_client()
     loop = asyncio.get_running_loop()
     err_streak = 0
+    was_busy = False
     try:
         while True:
             # Yield to a heavy DVR query/download so we don't pile concurrent
             # requests onto the goggles' tiny HTTP server (gallery timeouts).
-            if _busy():
+            busy = _busy()
+            if busy != was_busy:
+                await ws.send_json({"type": "busy", "busy": busy})
+                was_busy = busy
+            if busy:
                 await asyncio.sleep(0.3)
                 continue
             # Only the poll is guarded: a failed send means the tab is gone and

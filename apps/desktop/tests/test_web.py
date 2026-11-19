@@ -6,6 +6,7 @@ import json
 import socket
 import threading
 import time
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -104,6 +105,7 @@ def _mock_goggles():
     srv._current_transport = "tcp"
     srv._stream_start_time = time.monotonic() - 100  # 100s of fake uptime
     srv._goggles_busy = 0
+    srv._transfer_lock = threading.Lock()
     srv._auto_shutdown_enabled = False
     srv._active_clients = 0
 
@@ -171,8 +173,8 @@ class _FakeGogglesHandler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
             for _ in range(self.server.clip_size // 1000):
+                time.sleep(0.002)  # before the write, so the last byte ends the request
                 self.wfile.write(b"x" * 1000)
-                time.sleep(0.002)
             self.close_connection = True
         except OSError:
             pass  # the app hung up on us
@@ -699,12 +701,15 @@ class TestWebSocketTelemetry:
             assert "connection refused" in msg["message"]
 
     def test_polling_waits_while_goggles_busy(self, client, _mock_goggles):
+        """The page is told, so it can disable its download, play and refresh buttons."""
         fake_client, _ = _mock_goggles
         srv._busy_enter()
         with client.websocket_connect("/ws/telemetry") as ws:
             time.sleep(1.0)
             assert fake_client.get_device_state.call_count == 0
             srv._busy_exit()
+            assert ws.receive_json() == {"type": "busy", "busy": True}
+            assert ws.receive_json() == {"type": "busy", "busy": False}
             assert ws.receive_json()["type"] == "state"
 
 
@@ -791,6 +796,52 @@ class TestLiveServer:
         assert srv._busy()
         resp.close()
         assert _wait_for(lambda: not srv._busy() and goggles.inflight == 0, timeout=3)
+        goggles.clip_size = 10_000
+        assert _http(live + "/api/records/AvatarG0002.mp4/download")[0] == 200
+
+    def test_one_clip_transfer_at_a_time(self, live, goggles):
+        """While a clip transfers, another download, the inline player, the list
+        and commands never reach the goggles (CONSTRAINT-001): they are refused
+        with a reason, and queries wait for the transfer to end."""
+        goggles.clip_size = 1_000_000  # 2 s: outlasts the 1 s a download waits for its turn
+        dl = "/api/records/AvatarG0002.mp4/download"
+        first = threading.Thread(target=_http, args=(live + "/api/records/AvatarG0001.mp4/download",))
+        first.start()
+        assert goggles.arrived.wait(3)
+        calls = [("GET", dl), ("GET", dl + "?inline=1"), ("GET", "/api/records"),
+                 ("DELETE", "/api/records/AvatarG0002.mp4"), ("POST", "/api/settime"),
+                 ("GET", "/api/info"), ("GET", "/api/state")]
+        replies = {}
+
+        def call(method, path):
+            try:
+                replies[path, method] = _http(live + path, method)[0], b""
+            except urllib.error.HTTPError as exc:
+                replies[path, method] = exc.code, exc.read()
+
+        threads = [threading.Thread(target=call, args=c) for c in calls]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(15)
+        first.join(15)
+        assert goggles.max_inflight == 1
+        assert {k: v[0] for k, v in replies.items()} == {
+            (dl, "GET"): 409, (dl + "?inline=1", "GET"): 409, ("/api/records", "GET"): 409,
+            ("/api/records/AvatarG0002.mp4", "DELETE"): 409, ("/api/settime", "POST"): 409,
+            ("/api/info", "GET"): 200, ("/api/state", "GET"): 200}
+        assert json.loads(replies[dl, "GET"][1])["detail"] == (
+            "The goggles are busy sending a clip. Wait for it to finish, then try again.")
+        assert goggles.seen[0] == "download"
+        assert sorted(goggles.seen[1:]) == ["devicestate", "version"]
+        assert _http(live + dl)[0] == 200
+
+    def test_batch_download_gets_every_clip(self, live, goggles):
+        """The batch asks for each clip as soon as the previous body ends, which
+        can be before that transfer has let go of the goggles."""
+        goggles.clip_size = 10_000
+        statuses = [_http(live + "/api/records/AvatarG0001.mp4/download")[0] for _ in range(100)]
+        assert statuses == [200] * 100
 
     def test_closing_the_tab_stops_telemetry_polling(self, live, goggles):
         ws_url = live.replace("http://", "ws://") + "/ws/telemetry"
