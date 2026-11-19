@@ -203,8 +203,8 @@ Want to run from source or contribute? See [WEB_README.md](apps/desktop/WEB_READ
 
 ### Repository layout
 
-- `apps/desktop` — desktop/web app (Python)
-- `apps/mobile` — Android/iOS app (Flutter)
+- [`apps/desktop`](apps/desktop/WEB_README.md) — desktop/web app (Python)
+- [`apps/mobile`](apps/mobile/README.md) — Android/iOS app (Flutter)
 
 ---
 

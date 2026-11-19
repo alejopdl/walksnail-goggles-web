@@ -1,8 +1,8 @@
-# Walksnail Mobile App
+# WS WiFi Stream — mobile app
 
-A modern, low-latency mobile application for Walksnail Avatar FPV goggles, built with Flutter.
+**WS WiFi Stream** is a modern, low-latency mobile app, built with Flutter, that works with Walksnail Avatar FPV goggles.
 
-**Platforms:** Android ✅ · iOS ✅ *(builds & runs; live video and DVR downloads require a physical iPhone joined to the goggles WiFi — the iOS Simulator cannot reach the LAN device or hardware-decode RTSP).*
+**Platforms:** Android ✅ · iOS 🚧 *(builds and runs; not released yet — live video and DVR downloads require a physical iPhone on the goggles WiFi)*
 
 ## Features
 
@@ -20,13 +20,13 @@ A modern, low-latency mobile application for Walksnail Avatar FPV goggles, built
 ## Architecture
 
 - **State Management:** Uses `Provider` for reactive UI updates (`GogglesState`).
-- **Networking:** Custom HTTP polling loop for real-time telemetry extraction (`WalksnailApi`).
+- **Networking:** Custom HTTP polling loop for real-time telemetry extraction (`WSApi`).
 - **Video Player:** `fvp` is used to decode the raw `rtsp://192.168.42.1/live.ch01` stream directly, skipping high-level flutter players that buffer heavily.
 
 ## Development Setup
 
 ### Prerequisites
-- Flutter SDK (3.x)
+- Flutter 3.44+ (Dart ≥ 3.12.2)
 - **Android:** Android SDK & NDK, OpenJDK 17
 - **iOS:** Xcode (full install, not just Command Line Tools) + an iOS Simulator runtime. Minimum deployment target is **iOS 14** (required by `fc_native_video_thumbnail`). Uses Swift Package Manager — no CocoaPods/Podfile needed.
 

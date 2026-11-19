@@ -29,4 +29,5 @@ dist/
 # AI tooling (local only)
 .agents/
 .claude/
+.superpowers/
 .gemini/
