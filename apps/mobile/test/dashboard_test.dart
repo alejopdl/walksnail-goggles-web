@@ -151,6 +151,28 @@ void main() {
     await _close(tester, g);
   });
 
+  testWidgets('keeps the video closed when the gallery is reopened quickly',
+      (tester) async {
+    final players = _FakePlayers();
+    final g = await _showLiveVideo(tester, players);
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+
+    await tester.tap(find.byIcon(Icons.video_library));
+    await _pumpSeconds(tester, 1);
+    navigator.pop();
+    await _pumpSeconds(tester, 1);
+    await tester.tap(find.byIcon(Icons.video_library));
+    await _pumpSeconds(tester, 2.5); // past the first gallery's 3 s
+    expect(players.live, 0);
+    expect(players.opened, 1, reason: 'nothing reopens it under the gallery');
+
+    navigator.pop();
+    await _pumpSeconds(tester, 1.5);
+    expect(players.opened, 2, reason: 'reopened once, not restarted');
+    expect(players.live, 1);
+    await _close(tester, g);
+  });
+
   testWidgets('drops a player that finishes connecting under the gallery',
       (tester) async {
     final players = _FakePlayers(connectTime: const Duration(seconds: 2));

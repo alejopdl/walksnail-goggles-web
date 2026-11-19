@@ -61,6 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // The live feed is released while the DVR gallery is open, so downloads get
   // the goggles to themselves and the stall monitor doesn't restart it unseen.
   bool _inGallery = false;
+  int _galleryOpens = 0; // only the latest gallery may bring the video back
 
   @override
   void initState() {
@@ -234,6 +235,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _openGallery() async {
+    final open = ++_galleryOpens;
     _inGallery = true;
     _destroyPlayer();
     final settled = Future<void>.delayed(_rtspSettle);
@@ -241,6 +243,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       MaterialPageRoute(builder: (_) => const GalleryScreen()),
     );
     await settled;
+    if (open != _galleryOpens) return;
     _inGallery = false;
     if (!mounted || !_wasVtxConnected) return;
     _restartAttempts = 0;
