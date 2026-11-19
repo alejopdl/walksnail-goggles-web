@@ -48,6 +48,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
   // so batch downloads can await true completion, one clip at a time.
   final Map<String, Completer<void>> _downloadDone = {};
 
+  // Clip sizes come from one HEAD per file, sent one at a time and never during
+  // a download: the goggles' HTTP server chokes on concurrent requests.
+  final http.Client _http = http.Client();
+  final List<Map<String, dynamic>> _sizeQueue = [];
+  Future<void>? _sizeFetch;
+
   GogglesState? _goggles;
 
   @override
@@ -71,6 +77,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
       if (!done.isCompleted) done.complete();
     }
     _downloadDone.clear();
+    _http.close();
     _goggles?.resumePolling();
     super.dispose();
   }
@@ -86,15 +93,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
     try {
       final api = context.read<GogglesState>().api;
       final data = await api.listRecords();
+      if (!mounted) return;
       final rows = (data['rows'] as List<dynamic>?) ?? [];
       final records = rows.cast<Map<String, dynamic>>();
 
       // (File sizes and thumbnails will be fetched lazily in the list builder)
+      _sizeQueue.clear();
       setState(() {
         _records = records;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -102,10 +112,30 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  void _queueFileSize(Map<String, dynamic> record) {
+    if (record['_sizeQueued'] != true) {
+      record['_sizeQueued'] = true;
+      _sizeQueue.add(record);
+    }
+    _fetchFileSizes();
+  }
+
+  Future<void> _fetchFileSizes() async {
+    if (_sizeFetch != null) return;
+    final api = context.read<GogglesState>().api;
+    while (mounted && _sizeQueue.isNotEmpty && _downloading.isEmpty) {
+      final record = _sizeQueue.removeAt(0);
+      _sizeFetch = _fetchFileSize(
+          api.recordUrl(record['szFileName']?.toString() ?? ''), record);
+      await _sizeFetch;
+    }
+    _sizeFetch = null;
+  }
+
   Future<void> _fetchFileSize(String url, Map<String, dynamic> record) async {
     try {
       final response =
-          await http.head(Uri.parse(url)).timeout(const Duration(seconds: 5));
+          await _http.head(Uri.parse(url)).timeout(const Duration(seconds: 5));
       final contentLength = response.headers['content-length'];
       if (contentLength != null && mounted) {
         setState(() {
@@ -140,6 +170,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     setState(() => _downloading[filename] = 0.0);
 
     try {
+      await _sizeFetch; // let an in-flight size request finish first
       final downloadDir = await _getDownloadDir();
       final filePath = clipTempPath(downloadDir, filename);
       final file = File(filePath);
@@ -522,11 +553,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
         final isDownloading = downloadProgress != null;
         final isSelected = _selected.contains(filename);
 
-        // Lazily fetch data if missing
-        if (fileSize == 0 && mounted) {
-          final api = context.read<GogglesState>().api;
-          _fetchFileSize(api.recordUrl(filename), record);
-        }
+        if (fileSize == 0) _queueFileSize(record);
 
         return GestureDetector(
           onLongPress: () {
