@@ -201,6 +201,11 @@ Log location:
 
 Want to run from source or contribute? See [WEB_README.md](apps/desktop/WEB_README.md).
 
+### Repository layout
+
+- `apps/desktop` — desktop/web app (Python)
+- `apps/mobile` — Android/iOS app (Flutter)
+
 ---
 
 *[MIT License](LICENSE) · [Changelog](CHANGELOG.md) · Unofficial — not affiliated with Caddx or Walksnail ([trademarks](TRADEMARKS.md))*

@@ -13,7 +13,7 @@ apps/desktop/tests/test_webapp_verify.py
 # THIS REPO IS PUBLIC — working-process notes never get committed here.
 docs/internal/
 
-# Python PoC
+# Desktop app (Python)
 apps/desktop/.venv/
 __pycache__/
 *.pyc
@@ -30,6 +30,3 @@ dist/
 .agents/
 .claude/
 .gemini/
-
-# Flutter mobile app lives in a separate location, not in this public repo
-walksnail_mobile/

@@ -7,12 +7,12 @@ A modern, low-latency mobile application for Walksnail Avatar FPV goggles, built
 ## Features
 
 - **Ultra-Low Latency RTSP Stream:** Uses `fvp` (mdksdk) to render the RTSP stream natively with hardware acceleration, achieving minimal latency similar to the official app.
-- **Auto-Connect Watchdog:** A background loop continuously polls the goggles' telemetry (`/api/ajaxcom`). The video stream automatically starts when the VTX connects and stops when it disconnects.
+- **Auto-Connect Watchdog:** A background loop continuously polls the goggles' telemetry (`/ajaxcom`, every 500 ms). The video stream automatically starts when the VTX connects and stops when it disconnects.
 - **Smart OSD Overlay:** Telemetry data (voltage, bitrate, signal, REC status) rendered as a clean Flutter overlay. Supports "Always On" and "Auto-Hide" modes.
 - **DVR Gallery:**
   - Fast, lazy-loaded list of DVR recordings from the goggles' SD card.
   - Multi-select mode for batch downloading.
-  - Downloads with progress bars: on **Android** straight to the `Downloads/Walksnail` folder, on **iOS** saved into the **Photos** library (album "Walksnail") via `gal`.
+  - Downloads with progress bars: on both **Android** and **iOS**, clips are saved to the phone's gallery / **Photos** library in the album "WS WiFi Stream" via `gal`.
   - Cancel downloads mid-flight.
   - Sort by name, duration, and file size.
 - **Platform Integration:** Screen rotation control and immersive fullscreen. Hardware video decode is platform-aware — MediaCodec on Android, VideoToolbox on iOS.
@@ -31,6 +31,8 @@ A modern, low-latency mobile application for Walksnail Avatar FPV goggles, built
 - **iOS:** Xcode (full install, not just Command Line Tools) + an iOS Simulator runtime. Minimum deployment target is **iOS 14** (required by `fc_native_video_thumbnail`). Uses Swift Package Manager — no CocoaPods/Podfile needed.
 
 ### Build Instructions
+
+Run these commands from `apps/mobile`.
 
 1. **Get dependencies:**
    ```bash
@@ -52,7 +54,7 @@ A modern, low-latency mobile application for Walksnail Avatar FPV goggles, built
    ```bash
    flutter build ios --debug --simulator
    ```
-   *For a real device use `flutter build ipa` (set your bundle ID and signing team in Xcode first — the default `com.example.walksnailMobile` is a placeholder).*
+   *For a real device use `flutter build ipa` (set your bundle ID and signing team in Xcode first — the default `com.example.wswifistream` is a placeholder).*
 
 ## Known Limitations
 
