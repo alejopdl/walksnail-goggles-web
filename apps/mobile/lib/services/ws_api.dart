@@ -2,8 +2,11 @@
 ///
 /// Ported 1:1 from the Python `protocol.py` + `client.py`.
 /// All calls go directly from the phone to the goggles over WiFi (no proxy).
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import '../models/device_state.dart';
 
 class WSApi {
@@ -18,7 +21,10 @@ class WSApi {
   WSApi({
     this.host = defaultHost,
     this.timeout = const Duration(seconds: 5),
-  }) : _client = http.Client();
+  }) : _client = IOClient(
+            // An abort only reaches a request once it is connected; without
+            // this a connect to absent goggles lingers ~30 s in SYN_SENT.
+            HttpClient()..connectionTimeout = timeout);
 
   String get rtspUrl => 'rtsp://$host/live.ch01';
 
@@ -34,13 +40,9 @@ class WSApi {
     // reuse one pooled keep-alive connection (shared [_client]) so polling stays
     // on a single socket — otherwise, on some platforms, closed sockets pile up
     // and polls fail in bursts, flapping the UI online/offline.
-    final response = await _client
-        .post(uri,
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: szCmd)
-        .timeout(timeout);
+    final response = await _send(
+        uri, {'Content-Type': 'application/x-www-form-urlencoded'}, szCmd,
+        timeout);
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final ret = data['nRetVal'] as int? ?? 0;
@@ -48,6 +50,27 @@ class WSApi {
       throw WSApiError(ret, data['szError']?.toString() ?? '');
     }
     return data;
+  }
+
+  /// POSTs [body], giving up after [limit]. A timed-out request is aborted, not
+  /// just abandoned: otherwise its socket stays open and the next request opens
+  /// another one beside it, on a server that copes with one at a time.
+  Future<http.Response> _send(Uri uri, Map<String, String> headers,
+      String body, Duration limit) async {
+    final abort = Completer<void>();
+    final request =
+        http.AbortableRequest('POST', uri, abortTrigger: abort.future)
+          ..headers.addAll(headers)
+          ..body = body;
+    try {
+      return await _client
+          .send(request)
+          .then(http.Response.fromStream)
+          .timeout(limit);
+    } on TimeoutException {
+      abort.complete();
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> _ajax(Map<String, dynamic> bodyObj) =>
@@ -116,14 +139,14 @@ class WSApi {
     // DVR queries can be slow if there are many files on the SD card.
     final szCmd = 'szCmd=${jsonEncode({'query_record': {'start': start, 'limit': limit}})}';  
     final uri = Uri.parse('http://$host$_epQuerydata');
-    final response = await _client
-        .post(uri,
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Connection': 'close',
-            },
-            body: szCmd)
-        .timeout(const Duration(seconds: 15));
+    final response = await _send(
+        uri,
+        {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Connection': 'close',
+        },
+        szCmd,
+        const Duration(seconds: 15));
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final ret = data['nRetVal'] as int? ?? 0;
     if (ret != 0) {
