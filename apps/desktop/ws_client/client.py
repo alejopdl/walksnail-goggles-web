@@ -7,6 +7,7 @@ be reachable on its Wi-Fi AP (default host 192.168.42.1).
 from __future__ import annotations
 
 import http.client
+import os
 import threading
 import time
 import urllib.parse
@@ -244,14 +245,23 @@ class WSClient:
         # Long timeout: clips can be large; download is not a control call.
         t0 = time.monotonic()
         total = 0
+        part = dest + ".part"
         debuglog.event(f"[dvr] download start {filename}")
         try:
             with urllib.request.urlopen(url, timeout=max(self.timeout, 60)) as resp, \
-                    open(dest, "wb") as fh:
+                    open(part, "wb") as fh:
+                length = resp.headers.get("Content-Length")
                 while chunk := resp.read(1 << 16):
                     fh.write(chunk)
                     total += len(chunk)
+            # read(amt) returns b"" when the goggles close early; it never
+            # raises IncompleteRead the way a bare read() does.
+            if length is not None and total != int(length):
+                raise ConnectionError(f"download cut short: {total} of {length} bytes")
+            os.replace(part, dest)
         except Exception as e:  # noqa: BLE001
+            if os.path.exists(part):
+                os.remove(part)
             debuglog.req("DVR", f"download {filename}",
                          (time.monotonic() - t0) * 1000, False,
                          f"{type(e).__name__}: {e} ({total} bytes)")
