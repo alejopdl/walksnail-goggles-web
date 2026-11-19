@@ -53,9 +53,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // When switching TCP↔UDP we must wait for the goggles to release the single
   // RTSP session before opening a new one.  During those 3 seconds we show a
   // countdown overlay so the user knows the app is intentionally pausing.
+  static const _rtspSettle = Duration(seconds: 3);
   bool _isSettling = false;
   int _settleCountdown = 3;
   Timer? _settleTimer;
+
+  // The live feed is released while the DVR gallery is open, so downloads get
+  // the goggles to themselves and the stall monitor doesn't restart it unseen.
+  bool _inGallery = false;
 
   @override
   void initState() {
@@ -75,7 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     _monitorTimer?.cancel();
     _settleTimer?.cancel();
-    _destroyPlayer();
+    _controller?.dispose(); // not _destroyPlayer(): no setState during dispose
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -103,7 +108,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _startPlayer(String url) async {
-    if (_starting) return;  // don't overlap init attempts (monitor ticks fast)
+    if (_starting || _inGallery) return;  // don't overlap init attempts (monitor ticks fast)
     _starting = true;
     _currentUrl = url;
     _lastPos = Duration.zero;
@@ -114,7 +119,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       await controller.initialize();
       await controller.play();
-      if (!mounted) {
+      if (!mounted || _inGallery) {
         controller.dispose();
         return;
       }
@@ -214,7 +219,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
 
       // After 3 s the goggles have had time to free the RTSP session.
-      await Future.delayed(const Duration(seconds: 3));
+      await Future.delayed(_rtspSettle);
       _settleTimer?.cancel();
 
       _starting = false;
@@ -226,6 +231,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // No active URL — just clear the settling flag.
       setState(() => _isSettling = false);
     }
+  }
+
+  Future<void> _openGallery() async {
+    _inGallery = true;
+    _destroyPlayer();
+    final settled = Future<void>.delayed(_rtspSettle);
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const GalleryScreen()),
+    );
+    await settled;
+    _inGallery = false;
+    if (!mounted || !_wasVtxConnected) return;
+    _restartAttempts = 0;
+    _wedged = false;
+    _startPlayer(context.read<GogglesState>().api.rtspUrl);
   }
 
   // --------------- build ---------------
@@ -442,13 +462,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: Colors.white54,
                 size: 22,
               ),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const GalleryScreen(),
-                  ),
-                );
-              },
+              onPressed: _openGallery,
               tooltip: 'DVR Gallery',
             ),
           ],
