@@ -48,7 +48,7 @@ graph LR
 ## Estructura de Archivos
 
 ```
-poc/python/
+apps/desktop/
 ├── pyproject.toml                    # Package config, deps, entry points
 ├── ws_client/
 │   ├── __init__.py
@@ -329,7 +329,7 @@ python -m pytest tests/ -q     # 86 tests, ~10s
 ## Instalación
 
 ```bash
-cd poc/python
+cd apps/desktop
 
 # Crear virtualenv
 python3 -m venv .venv && source .venv/bin/activate

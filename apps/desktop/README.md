@@ -1,4 +1,4 @@
-# walksnail-client (Python PoC)
+# WS WiFi Stream — desktop app (Python)
 
 Cross-platform client for the **Walksnail Avatar HD Goggles X**, talking their
 LAN protocol over WiFi. Runs on macOS / Linux / Windows — no Android app required.
@@ -10,7 +10,7 @@ LAN protocol over WiFi. Runs on macOS / Linux / Windows — no Android app requi
 ## Install
 
 ```bash
-cd poc/python
+cd apps/desktop
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .            # control plane only
 pip install -e ".[video]"   # + live view (PyAV/OpenCV)

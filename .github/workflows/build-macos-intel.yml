@@ -28,7 +28,7 @@ jobs:
     runs-on: macos-15-intel
     defaults:
       run:
-        working-directory: poc/python
+        working-directory: apps/desktop
     steps:
       - uses: actions/checkout@v4
 
@@ -97,8 +97,8 @@ jobs:
         with:
           name: WS-WiFi-Stream-macos-intel
           path: |
-            poc/python/dist/WS-WiFi-Stream-mac-x86_64.zip
-            poc/python/dist/WS-WiFi-Stream-mac-x86_64.dmg
+            apps/desktop/dist/WS-WiFi-Stream-mac-x86_64.zip
+            apps/desktop/dist/WS-WiFi-Stream-mac-x86_64.dmg
           if-no-files-found: error
 
       - name: Attach to release

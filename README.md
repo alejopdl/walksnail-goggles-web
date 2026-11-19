@@ -161,8 +161,8 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 | Platform | Status |
 |---|---|
 | **macOS (Apple Silicon)** | ✅ Tested |
+| **macOS (Intel)** | 🟡 Build provided — community testing welcome |
 | **Windows** | 🟡 Build provided — community testing welcome |
-| macOS (Intel) | ❓ Untested |
 | Linux / any OS (from source) | 🟡 Runs from source (Python) |
 
 ### Mobile app
@@ -199,7 +199,12 @@ Log location:
 
 ## For developers
 
-Want to run from source or contribute? See [WEB_README.md](poc/python/WEB_README.md).
+Want to run from source or contribute? See [WEB_README.md](apps/desktop/WEB_README.md).
+
+### Repository layout
+
+- [`apps/desktop`](apps/desktop/WEB_README.md) — desktop/web app (Python)
+- [`apps/mobile`](apps/mobile/README.md) — Android/iOS app (Flutter)
 
 ---
 
