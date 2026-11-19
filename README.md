@@ -161,8 +161,8 @@ Click the ⚙️ gear icon (or press `,`) to adjust:
 | Platform | Status |
 |---|---|
 | **macOS (Apple Silicon)** | ✅ Tested |
+| **macOS (Intel)** | 🟡 Build provided — community testing welcome |
 | **Windows** | 🟡 Build provided — community testing welcome |
-| macOS (Intel) | ❓ Untested |
 | Linux / any OS (from source) | 🟡 Runs from source (Python) |
 
 ### Mobile app

@@ -28,7 +28,16 @@ Una aplicación de escritorio gratuita y no oficial que te permite ver el **vide
 
 ### macOS
 
-1. Descargá `WS-WiFi-Stream-mac.zip` de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+Hay **dos** versiones para Mac según el procesador. Para saber cuál tenés:
+**menú apple → Acerca de esta Mac**. Si dice *Apple M1/M2/M3/M4* necesitás
+`arm64`; si dice *Intel*, `x86_64`. Si bajás la que no es, la app no abre.
+
+| Tu Mac | Archivo | Requiere |
+|---|---|---|
+| Apple Silicon | `WS-WiFi-Stream-mac-arm64.zip` | macOS 14 Sonoma o superior |
+| Intel | `WS-WiFi-Stream-mac-x86_64.zip` | macOS 12 Monterey o superior |
+
+1. Descargá el ZIP que te corresponde de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
 2. Descomprimí el ZIP → aparece `WS-WiFi-Stream.app`
 3. **Primera vez:** click derecho → **Abrir** → **Abrir** (solo la primera vez — macOS advierte sobre apps sin firma de Apple)
 4. A partir de la segunda vez, doble clic directo
@@ -38,7 +47,7 @@ Una aplicación de escritorio gratuita y no oficial que te permite ver el **vide
 
 ### Windows
 
-1. Descargá `WS-WiFi-Stream-win.zip` de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases)
+1. Descargá `WS-WiFi-Stream-win-amd64.zip` de la página de [Releases](https://github.com/alejopdl/walksnail-goggles-web/releases) *(o `WS-WiFi-Stream-win-setup.exe` si preferís instalador)*
 2. Descomprimí el ZIP en una carpeta (ej. `C:\WS-WiFi-Stream\`)
 3. Abrí la carpeta y doble clic en **`WS-WiFi-Stream.exe`**
 4. **Primera vez:** si Windows Defender advierte → click en **"Más información"** → **"Ejecutar de todas formas"**
