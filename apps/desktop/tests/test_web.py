@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import numpy as np
 import pytest
+from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 # We need to mock goggles I/O before importing the server module,
@@ -554,6 +555,63 @@ class TestWebSocketTelemetry:
             msg = ws.receive_json()
             assert msg["type"] == "error"
             assert "connection refused" in msg["message"]
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Origin guard (DNS rebinding / cross-site requests)
+# ═══════════════════════════════════════════════════════════════
+
+class TestOriginGuard:
+    """Only the app's own page may drive the server. TestClient puts the URL's
+    host:port in scope["server"], standing in for the socket uvicorn accepted on."""
+
+    def test_foreign_host_is_rejected_before_reaching_goggles(self, client, _mock_goggles):
+        fake_client, _ = _mock_goggles
+        rebind = {"Host": "rebind.attacker.example:8477"}
+        assert client.get("/api/records", headers=rebind).status_code == 403
+        assert client.delete("/api/records/AvatarG0001.mp4", headers=rebind).status_code == 403
+        fake_client.list_records.assert_not_called()
+        fake_client.delete_record.assert_not_called()
+
+    @pytest.mark.parametrize("path", ["/api/settime", "/api/shutdown", "/api/stream/restart?transport=udp"])
+    def test_cross_site_post_is_rejected(self, client, _mock_goggles, monkeypatch, path):
+        fake_client, fake_reader = _mock_goggles
+        quit_called = threading.Event()
+        monkeypatch.setattr(srv, "_quit_process", quit_called.set)
+        with patch.object(srv, "LatestFrameReader") as MockLFR:
+            r = client.post(path, headers={"Origin": "http://localhost:18992"})
+            assert r.status_code == 403
+            MockLFR.assert_not_called()
+        fake_client.set_time.assert_not_called()
+        fake_reader.stop.assert_not_called()
+        assert not quit_called.wait(0.5)
+
+    def test_cross_site_websocket_is_rejected(self, client, _mock_goggles):
+        fake_client, _ = _mock_goggles
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/telemetry", headers={"Origin": "http://evil.example"}):
+                pass
+        fake_client.get_device_state.assert_not_called()
+        assert srv._active_clients == 0
+
+    @pytest.mark.parametrize("server, host", [
+        ("127.0.0.1:8477", "localhost:8477"),
+        ("127.0.0.1:8477", "127.0.0.1:8477"),
+        ("[::1]:8477", "[::1]:8477"),
+        # LAN mode (--bind 0.0.0.0): a tablet reaches the Mac at its own address.
+        ("192.168.1.50:8477", "192.168.1.50:8477"),
+    ])
+    def test_own_page_is_allowed(self, _mock_goggles, server, host):
+        fake_client, _ = _mock_goggles
+        own = TestClient(srv.app, base_url=f"http://{server}")
+        headers = {"Host": host, "Origin": f"http://{host}"}
+        assert own.get("/api/records", headers={"Host": host}).status_code == 200
+        assert own.post("/api/settime", headers=headers).status_code == 200
+        assert own.delete("/api/records/AvatarG0001.mp4", headers=headers).status_code == 200
+        with own.websocket_connect(f"ws://{server}/ws/telemetry", headers=headers) as ws:
+            assert ws.receive_json()["type"] == "state"
+        fake_client.set_time.assert_called_once()
+        fake_client.delete_record.assert_called_once_with("AvatarG0001.mp4")
 
 
 # ═══════════════════════════════════════════════════════════════

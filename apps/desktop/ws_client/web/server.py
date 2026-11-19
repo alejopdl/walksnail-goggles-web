@@ -24,6 +24,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import AsyncGenerator
@@ -31,8 +32,10 @@ from typing import AsyncGenerator
 import cv2
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
+from starlette.websockets import WebSocketClose
 import uvicorn
 
 from ws_client import debuglog
@@ -257,6 +260,57 @@ async def _mjpeg_gen(
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="WS WiFi Stream", docs_url=None, redoc_url=None)
+
+
+_LOOPBACK_NAMES = {"localhost", "127.0.0.1", "::1"}
+
+
+def _is_this_app(url: str, server: "tuple[str, int] | None") -> bool:
+    """True if ``url`` (an Origin, or ``http://`` + Host) names this server: a
+    loopback name or the address the connection arrived on, on its port."""
+    try:
+        u = urllib.parse.urlsplit(url)
+        port = u.port or 80
+    except ValueError:
+        return False
+    if u.scheme != "http" or not server:
+        return False
+    server_host, server_port = server
+    return (u.hostname in _LOOPBACK_NAMES or u.hostname == server_host) and port == server_port
+
+
+class _OriginGuard:
+    """Refuse requests that aren't addressed to this app (a foreign Host means
+    DNS rebinding) or that come from another site's page (a foreign Origin means
+    CSRF or a hijacked WebSocket), before any route touches the goggles.
+
+    Checking against the socket's own address (``scope["server"]``) keeps
+    ``--bind 0.0.0.0`` working: a tablet reaching http://<lan-ip>:<port> sends
+    that IP as Host."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] in ("http", "websocket"):
+            headers = Headers(scope=scope)
+            server = scope.get("server")
+            host = headers.get("host", "")
+            origin = headers.get("origin")
+            if not _is_this_app(f"http://{host}", server) or (
+                    origin is not None and not _is_this_app(origin, server)):
+                debuglog.event(f"[guard] refused {scope['type']} {scope['path']} "
+                               f"(Host={host!r}, Origin={origin!r})")
+                if scope["type"] == "websocket":
+                    # Closing before accept makes the server answer HTTP 403.
+                    await WebSocketClose(code=1008)(scope, receive, send)
+                else:
+                    await PlainTextResponse("Forbidden", status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_OriginGuard)
 
 
 # ── Lifecycle / auto-shutdown ---------------------------------------------

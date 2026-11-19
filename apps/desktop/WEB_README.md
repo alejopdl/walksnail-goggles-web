@@ -218,7 +218,7 @@ ws-web [--host HOST] [--port PORT] [--bind BIND]
 
   --host   IP de las gafas (default: 192.168.42.1)
   --port   Puerto del web server (default: 8080)
-  --bind   Dirección de bind (default: 0.0.0.0)
+  --bind   Dirección de bind (default: 127.0.0.1; 0.0.0.0 expone a la LAN)
 ```
 
 ---
