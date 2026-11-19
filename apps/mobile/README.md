@@ -28,7 +28,7 @@
 ### Prerequisites
 - Flutter 3.44+ (Dart ≥ 3.12.2)
 - **Android:** Android SDK & NDK, OpenJDK 17
-- **iOS:** Xcode (full install, not just Command Line Tools) + an iOS Simulator runtime. Minimum deployment target is **iOS 14** (required by `fc_native_video_thumbnail`). Uses Swift Package Manager — no CocoaPods/Podfile needed.
+- **iOS:** Xcode (full install, not just Command Line Tools) + an iOS Simulator runtime. Minimum deployment target is **iOS 14**. Uses Swift Package Manager — no CocoaPods/Podfile needed.
 
 ### Build Instructions
 
