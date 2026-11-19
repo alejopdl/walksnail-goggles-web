@@ -22,20 +22,20 @@ Join your computer to the goggles Wi-Fi (`Walksnail_XXXX`, pass `12345678`),
 then:
 
 ```bash
-walksnail info          # goggles + air-unit versions / serials
-walksnail state         # live telemetry (vtx_connect, voltages, temps, bitrate)
-walksnail records --limit 20
-walksnail download AvatarG0531.mp4    # save a clip locally
-walksnail play AvatarG0531.mp4        # stream-play a recording (space=pause)
-walksnail pull-all dvr/               # download all clips into ./dvr
-walksnail delete AvatarG0531.mp4 --yes
-walksnail settime                     # sync goggles clock
-walksnail live --osd                  # live feed + telemetry overlay
-walksnail live --udp                  # RTP/UDP transport (resilient to loss)
+ws info          # goggles + air-unit versions / serials
+ws state         # live telemetry (vtx_connect, voltages, temps, bitrate)
+ws records --limit 20
+ws download AvatarG0531.mp4    # save a clip locally
+ws play AvatarG0531.mp4        # stream-play a recording (space=pause)
+ws pull-all dvr/               # download all clips into ./dvr
+ws delete AvatarG0531.mp4 --yes
+ws settime                     # sync goggles clock
+ws live --osd                  # live feed + telemetry overlay
+ws live --udp                  # RTP/UDP transport (resilient to loss)
 # device control (destructive — need --yes):
-walksnail reboot --yes
-walksnail factory-reset --yes
-walksnail format goggles --yes        # or: format vtx --yes
+ws reboot --yes
+ws factory-reset --yes
+ws format goggles --yes        # or: format vtx --yes
 ```
 
 In the live window: **q**/**ESC** quit, **s** save a PNG snapshot. In `play`:
@@ -74,14 +74,14 @@ ws_client/
   client.py     WSClient — HTTP control (urllib, zero deps)
   video.py      RTSP live view via PyAV: live_frames, LatestFrameReader,
                 show_live (latest-frame + reconnect + optional OSD/snapshot)
-  cli.py        `walksnail` command
+  cli.py        `ws` command
 examples/       connect.py, live_view.py
-tests/          test_protocol.py  (pytest; no device needed)
+tests/          pytest suites (no device needed); manual/ needs real goggles
 ```
 
 Run the tests (no device needed):
 ```bash
-pip install pytest && pytest -q
+pip install -e ".[web,dev]" && pytest -q
 ```
 
 ## Status
