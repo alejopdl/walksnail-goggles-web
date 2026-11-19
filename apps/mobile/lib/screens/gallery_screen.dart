@@ -85,6 +85,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   // --------------- Data Loading ---------------
 
   Future<void> _loadRecords() async {
+    if (_downloading.isNotEmpty) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -161,7 +162,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// so clips transfer strictly one at a time: the goggles' tiny one-shot HTTP
   /// server chokes on parallel file reads.
   Future<void> _downloadFile(String filename) async {
-    if (_downloading.containsKey(filename)) return; // Already downloading.
+    if (_downloading.isNotEmpty) return; // One transfer at a time, batch or not.
 
     final api = context.read<GogglesState>().api;
     final url = api.recordUrl(filename);
@@ -287,6 +288,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   void _downloadSelected() {
+    if (_downloading.isNotEmpty) return;
     // Strictly sequential: each _downloadFile future completes only when its
     // transfer has fully finished, so clips never download in parallel (the
     // goggles' one-shot HTTP server can't serve concurrent file reads).
@@ -384,6 +386,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   // --------------- Build ---------------
 
+  static const _waitForDownload = 'Wait for the current download to finish';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -435,9 +439,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
             // Download selected.
             IconButton(
-              icon: const Icon(Icons.download, color: Colors.cyanAccent),
-              onPressed: _selected.isEmpty ? null : _downloadSelected,
-              tooltip: 'Download Selected',
+              icon: Icon(Icons.download,
+                  color: _downloading.isEmpty
+                      ? Colors.cyanAccent
+                      : Colors.white24),
+              onPressed: _selected.isEmpty || _downloading.isNotEmpty
+                  ? null
+                  : _downloadSelected,
+              tooltip:
+                  _downloading.isEmpty ? 'Download Selected' : _waitForDownload,
             ),
           ] else ...[
             // Multi-select mode toggle.
@@ -470,9 +480,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
             // Refresh.
             IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.cyanAccent),
-              onPressed: _loadRecords,
-              tooltip: 'Refresh',
+              icon: Icon(Icons.refresh,
+                  color: _downloading.isEmpty
+                      ? Colors.cyanAccent
+                      : Colors.white24),
+              onPressed: _downloading.isEmpty ? _loadRecords : null,
+              tooltip: _downloading.isEmpty ? 'Refresh' : _waitForDownload,
             ),
           ],
         ],
@@ -697,9 +710,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 ),
                               )
                             : IconButton(
-                                icon: const Icon(Icons.download,
-                                    color: Colors.cyanAccent, size: 22),
-                                onPressed: () => _downloadFile(filename),
+                                icon: Icon(Icons.download,
+                                    color: _downloading.isEmpty
+                                        ? Colors.cyanAccent
+                                        : Colors.white24,
+                                    size: 22),
+                                onPressed: _downloading.isEmpty
+                                    ? () => _downloadFile(filename)
+                                    : null,
+                                tooltip: _downloading.isEmpty
+                                    ? null
+                                    : _waitForDownload,
                               ),
                       ),
                   ],

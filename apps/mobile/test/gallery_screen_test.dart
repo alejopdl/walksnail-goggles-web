@@ -31,6 +31,8 @@ class _Goggles {
   int maxInFlight = 0;
   bool downloading = false;
   final perFile = <String, int>{};
+  final gets = <String>[];
+  int lists = 0;
 
   _Goggles({
     this.sendLength = true,
@@ -55,6 +57,7 @@ class _Goggles {
           if (sendLength) req.response.headers.contentLength = 12345678;
         } else if (req.method == 'GET') {
           downloading = true;
+          gets.add(req.uri.path);
           req.response.headers.contentLength = clipBytes;
           for (var sent = 0; sent < clipBytes; sent += 8 * 1024) {
             req.response.add(List.filled(8 * 1024, 0));
@@ -63,6 +66,7 @@ class _Goggles {
           }
           downloading = false;
         } else {
+          lists++;
           await utf8.decodeStream(req);
           await Future.delayed(listDelay);
           req.response.write(jsonEncode({
@@ -168,6 +172,42 @@ void main() {
     expect(goggles.maxInFlight, 1);
     expect(goggles.heads, greaterThan(headsBefore),
         reason: 'size requests resume once the download is done');
+    await _close(tester, g, goggles);
+    tmp.deleteSync(recursive: true);
+  });
+
+  testWidgets('a batch download blocks other downloads and Refresh',
+      (tester) async {
+    final tmp = Directory.systemTemp.createTempSync('gallery_test');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => tmp.path);
+    final goggles = _Goggles();
+    final g = await _openGallery(tester, goggles, clips: 3);
+    await _runFor(tester, const Duration(milliseconds: 300));
+    final refresh = find.widgetWithIcon(IconButton, Icons.refresh);
+    final rowDownload = find.widgetWithIcon(IconButton, Icons.download).last;
+
+    await tester.tap(find.byIcon(Icons.checklist));
+    await tester.pump();
+    await tester.tap(find.text('AvatarG0001.mp4'));
+    await tester.tap(find.text('AvatarG0002.mp4'));
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.download)); // Download Selected
+    await _runFor(tester, const Duration(milliseconds: 200));
+
+    expect(tester.widget<IconButton>(rowDownload).onPressed, isNull);
+    expect(tester.widget<IconButton>(refresh).onPressed, isNull);
+    await tester.tap(rowDownload); // AvatarG0003.mp4
+    await tester.tap(refresh);
+    await _runFor(tester, const Duration(seconds: 5));
+
+    expect(goggles.maxInFlight, 1);
+    expect(goggles.gets,
+        ['/record/AvatarG0001.mp4', '/record/AvatarG0002.mp4']);
+    expect(goggles.lists, 1);
+    expect(tester.widget<IconButton>(refresh).onPressed, isNotNull,
+        reason: 'Refresh comes back once the batch is done');
     await _close(tester, g, goggles);
     tmp.deleteSync(recursive: true);
   });
