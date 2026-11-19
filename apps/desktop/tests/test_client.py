@@ -41,6 +41,16 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_GET(self):  # /record/<clip>: DVR download
+        clip = self.server.cfg["clip"]
+        self.send_response(200)
+        self.send_header("Content-Length",
+                         str(self.server.cfg.get("clip_length", len(clip))))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(clip)
+        self.close_connection = True
+
     def log_message(self, *a):  # keep test output clean
         pass
 
@@ -211,3 +221,21 @@ def test_error_payload_raises_goggles_error(server):
     c = _client(server, timeout=2.0)
     with pytest.raises(GogglesError):
         c.get_version()
+
+
+# ── DVR download ──────────────────────────────────────────────────────────
+def test_download_writes_the_whole_clip(server, tmp_path):
+    server.cfg["clip"] = bytes(range(256)) * 40
+    dest = tmp_path / "A.mp4"
+    _client(server).download_record("A.mp4", str(dest))
+    assert dest.read_bytes() == server.cfg["clip"]
+    assert [f.name for f in tmp_path.iterdir()] == ["A.mp4"]
+
+
+def test_download_cut_short_raises_and_leaves_no_file(server, tmp_path):
+    """A clip saved short would read as done, and `pull-all` skips existing files."""
+    server.cfg["clip"] = b"x" * 4_000
+    server.cfg["clip_length"] = 10_000
+    with pytest.raises(OSError):
+        _client(server).download_record("A.mp4", str(tmp_path / "A.mp4"))
+    assert list(tmp_path.iterdir()) == []
