@@ -140,6 +140,15 @@ def test_set_time_raises_on_stale_socket_instead_of_resending(server):
         "SysCtrl settime must not be resent over a stale socket"
 
 
+def test_delete_with_a_crafted_clip_name_sends_nothing(server):
+    """The name goes raw into the form body: ``&szCmd=...`` would add a second
+    command (here a reboot) to a delete."""
+    c = _client(server, timeout=2.0)
+    with pytest.raises(ValueError):
+        c.delete_record("x&szCmd={%22SysCtrl%22:{%22reboot%22:{}}}&z=")
+    assert server.cfg["requests"] == 0
+
+
 def test_reconnects_after_stale_socket(server):
     c = _client(server, timeout=2.0)
     c._request("/ajaxcom", b"x=1", 2.0)

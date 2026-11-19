@@ -14,8 +14,13 @@ import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
 import '../providers/goggles_state.dart';
+import '../services/ws_api.dart';
 
 enum SortBy { name, duration, size }
+
+/// Temp file for a clip being downloaded; refuses names that would leave [dir].
+String clipTempPath(String dir, String filename) =>
+    '$dir/${checkClipName(filename)}';
 
 class GalleryScreen extends StatefulWidget {
   const GalleryScreen({super.key});
@@ -136,7 +141,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
     try {
       final downloadDir = await _getDownloadDir();
-      final filePath = '$downloadDir/$filename';
+      final filePath = clipTempPath(downloadDir, filename);
       final file = File(filePath);
 
       final request = http.Request('GET', Uri.parse(url));

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import re
 import urllib.parse
 from typing import Any
 
@@ -72,8 +73,15 @@ CMD_FORMAT_GOGGLES_SD = sys_ctrl("gassdcardformat")
 CMD_FORMAT_VTX_SD = sys_ctrl("vtxsdcardformat")
 
 
+_CLIP_NAME = re.compile(r"[A-Za-z0-9._-]+")
+
+
 def cmd_delete_record(filename: str) -> dict[str, Any]:
     """``SysCtrl/deletegasrecord`` for one DVR file (by ``szFileName``)."""
+    # szcmd() does not form-encode the JSON: "&", "%" or quotes in a name could
+    # add a second command (format, reboot) to the body.
+    if not _CLIP_NAME.fullmatch(filename) or filename in (".", ".."):
+        raise ValueError(f"invalid clip name: {filename!r}")
     return sys_ctrl("deletegasrecord", {"szFileName": filename})
 
 

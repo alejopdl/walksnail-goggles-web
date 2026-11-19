@@ -140,7 +140,7 @@ class WSApi {
   Future<void> deleteRecord(String filename) async {
     await _ajax({
       'SysCtrl': {
-        'deletegasrecord': {'szFileName': filename}
+        'deletegasrecord': {'szFileName': checkClipName(filename)}
       }
     });
   }
@@ -148,6 +148,19 @@ class WSApi {
   void dispose() {
     _client.close();
   }
+}
+
+final _clipName = RegExp(r'^[A-Za-z0-9._-]+$');
+
+/// Returns [filename] if it is a plain DVR file name; throws otherwise.
+///
+/// The szCmd body is not form-encoded, so `&`, `%` or quotes in a name could
+/// add a second command; `/` or `..` would escape a local folder.
+String checkClipName(String filename) {
+  if (!_clipName.hasMatch(filename) || filename == '.' || filename == '..') {
+    throw ArgumentError.value(filename, 'filename', 'invalid clip name');
+  }
+  return filename;
 }
 
 class WSApiError implements Exception {
