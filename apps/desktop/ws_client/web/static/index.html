@@ -939,6 +939,9 @@ const S = {
   mediaPageSize: 60,
   mediaSelected: new Set(),
   mediaLoading: false,
+  mediaBatch: false,      // true while "Download selected" runs
+  gogglesBusy: false,     // server says a clip transfer or list query is using the goggles
+  infoAfterBusy: false,   // /api/info was refused during a clip transfer: ask again after it
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -1232,12 +1235,18 @@ function connectWS() {
       } else if (msg.type === 'error') {
         // Telemetry poll failed — likely goggles offline
         handleTelemetryDrop(msg.message);
+      } else if (msg.type === 'busy') {
+        S.gogglesBusy = msg.busy;
+        updateMediaSelectionUI();
+        if (!msg.busy && S.infoAfterBusy) fetchDeviceInfo();
       }
     } catch {}
   };
 
   S.ws.onerror = () => { /* close will follow */ };
   S.ws.onclose = () => {
+    S.gogglesBusy = false;  // a new socket reports it again if still busy
+    updateMediaSelectionUI();
     S.wsRetryTimer = setTimeout(connectWS, 3000);
     handleTelemetryDrop('WebSocket disconnected');
   };
@@ -1426,6 +1435,7 @@ async function fetchConfig() {
 async function fetchDeviceInfo() {
   try {
     const r = await fetch('/api/info');
+    S.infoAfterBusy = r.status === 409;
     if (!r.ok) return;
     const d = await r.json();
     document.getElementById('hdr-gsn').textContent = d.goggles_sn || '–';
@@ -1607,11 +1617,12 @@ async function loadMedia() {
   emptyEl.style.display = 'none';
   pagerEl.style.display = 'none';
   listEl.innerHTML = '<div class="media-empty">Loading recordings…</div>';
-  document.getElementById('media-refresh').disabled = true;
+  updateMediaSelectionUI();
   try {
     // Request a high limit so we get every clip (the goggles report 'total'
     // but default the page size; 562+ clips otherwise get truncated).
     const r = await fetch('/api/records?start=0&limit=100000');
+    if (r.status === 409) throw { busy: (await r.json()).detail };
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     S.mediaRows = Array.isArray(d.rows) ? d.rows.slice() : [];
@@ -1625,13 +1636,12 @@ async function loadMedia() {
     S.mediaRows = [];
     listEl.innerHTML = '';
     document.getElementById('media-empty-title').textContent = 'Could not load recordings';
-    document.getElementById('media-empty-sub').textContent =
+    document.getElementById('media-empty-sub').textContent = e.busy ||
       'The goggles did not respond. Make sure they are reachable, then Refresh.';
     emptyEl.style.display = 'block';
     document.getElementById('media-count').textContent = '—';
   } finally {
     S.mediaLoading = false;
-    document.getElementById('media-refresh').disabled = false;
     updateMediaSelectionUI();
   }
 }
@@ -1699,10 +1709,10 @@ function mediaRowEl(row) {
 
   const actions = document.createElement('div');
   actions.className = 'media-actions';
-  const play = mkBtn('▶ Play', 'media-btn', () => mediaPlay(name));
+  const play = mkBtn('▶ Play', 'media-btn media-xfer', () => mediaPlay(name));
   play.setAttribute('data-tip-title', 'Play in browser');
   play.setAttribute('data-tip', 'Stream this clip inline. The goggles have no seek support, so playback is from the start.');
-  const dl = mkBtn('⤓', 'media-btn', () => mediaDownload(name));
+  const dl = mkBtn('⤓', 'media-btn media-xfer', () => mediaDownload(name));
   dl.setAttribute('data-tip-title', 'Download'); dl.setAttribute('data-tip', 'Save this clip to your computer.');
   const del = mkBtn('🗑', 'media-btn danger', () => mediaDelete(name));
   del.setAttribute('data-tip-title', 'Delete'); del.setAttribute('data-tip', 'Permanently delete this clip from the goggles SD card.');
@@ -1745,8 +1755,12 @@ function mediaToggleSelectAll() {
 
 function updateMediaSelectionUI() {
   const n = S.mediaSelected.size;
+  // The goggles serve one clip at a time; the server refuses a second transfer.
+  const busy = S.gogglesBusy || S.mediaBatch || S.mediaLoading;
   document.getElementById('media-delsel').disabled = n === 0;
-  document.getElementById('media-dlsel').disabled = n === 0;
+  document.getElementById('media-dlsel').disabled = n === 0 || busy;
+  document.getElementById('media-refresh').disabled = busy;
+  document.querySelectorAll('.media-xfer').forEach(b => { b.disabled = busy; });
   document.getElementById('media-selinfo').textContent = n ? `${n} selected` : '';
   const start = S.mediaPage * S.mediaPageSize;
   const slice = S.mediaRows.slice(start, start + S.mediaPageSize);
@@ -1771,6 +1785,8 @@ async function mediaDownloadSelected() {
   const names = [...S.mediaSelected];
   if (!names.length) return;
   let ok = 0, fail = 0;
+  S.mediaBatch = true;
+  updateMediaSelectionUI();
   for (const [i, name] of names.entries()) {
     toast(`Downloading ${i + 1}/${names.length}: ${name}`, 'info', 2500);
     try {
@@ -1788,6 +1804,8 @@ async function mediaDownloadSelected() {
       toast(`Download failed: ${name} (${e.message})`, 'error');
     }
   }
+  S.mediaBatch = false;
+  updateMediaSelectionUI();
   toast(`Downloaded ${ok} clip(s)${fail ? `, ${fail} failed` : ''}`,
         fail ? 'error' : 'success');
 }

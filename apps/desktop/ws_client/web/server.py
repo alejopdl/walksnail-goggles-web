@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import hashlib
 import os
 import signal
@@ -70,6 +71,34 @@ def _busy_exit() -> None:
     with _busy_lock:
         _goggles_busy = max(0, _goggles_busy - 1)
 
+
+# Held for a whole clip transfer (download or inline playback). A clip can take
+# minutes, so another transfer, a list, a command or a query is refused rather
+# than queued: each request left waiting holds a worker thread, and the transfer
+# needs one to read every chunk (40 waiting requests froze it).
+_transfer_lock = threading.Lock()
+_TRANSFER_BUSY = "The goggles are busy sending a clip. Wait for it to finish, then try again."
+_requests = 0  # control requests admitted by _goggles_request and not yet done
+_requests_done = threading.Condition()
+
+
+@contextlib.contextmanager
+def _goggles_request():
+    """Admit a control request, or refuse it with a 409 while a clip transfers.
+    A transfer starts only once the admitted requests are done, so none of them
+    waits for a clip either."""
+    global _requests
+    with _requests_done:
+        if _transfer_lock.locked():
+            raise HTTPException(409, detail=_TRANSFER_BUSY)
+        _requests += 1
+    try:
+        yield _get_client()
+    finally:
+        with _requests_done:
+            _requests -= 1
+            _requests_done.notify_all()
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 # ---------------------------------------------------------------------------
@@ -83,6 +112,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 _goggles_host: str = p.DEFAULT_HOST      # goggles HTTP host (control/records/files)
 _rtsp_host: str = ""                      # goggles RTSP host; "" → fall back to _goggles_host
 _client: WSClient | None = None   # HTTP control client (lazy)
+_client_lock = threading.Lock()
 _client_timeout: float = 4.0             # per-request HTTP timeout (s); raise for tunnels
 
 _reader: LatestFrameReader | None = None  # background RTSP decoder thread
@@ -95,14 +125,17 @@ def _get_client() -> WSClient:
     """Lazy-initialise and return the shared HTTP control client.
 
     Default 4s timeout — long enough for the goggles to respond over a Wi-Fi
-    hop, short enough not to block the event loop unduly. Raise it with
-    ``--timeout`` when driving the goggles through a slower adb/USB tunnel,
-    where the large records response can exceed 4s.
+    hop, short enough that a UI action against offline goggles fails fast.
+    Raise it with ``--timeout`` when driving the goggles through a slower
+    adb/USB tunnel, where the large records response can exceed 4s.
     """
     global _client
-    if _client is None:
-        _client = WSClient(_goggles_host, timeout=_client_timeout)
-    return _client
+    # Routes run in worker threads: two first requests racing here would each
+    # get a client, with its own connection and lock (CONSTRAINT-001).
+    with _client_lock:
+        if _client is None:
+            _client = WSClient(_goggles_host, timeout=_client_timeout)
+        return _client
 
 
 def _get_or_start_reader(transport: str = "tcp") -> LatestFrameReader:
@@ -348,9 +381,12 @@ async def api_shutdown():
 
 
 # ── Video ------------------------------------------------------------------
+# Routes that call the blocking WSClient or take _reader_lock are plain `def`:
+# FastAPI runs them in a worker thread, so waiting on the goggles (or on a reader
+# thread to stop) never freezes the event loop that serves video and telemetry.
 
 @app.get("/video/stream")
-async def video_stream(
+def video_stream(
     transport: str = Query("tcp", pattern="^(tcp|udp)$"),
     quality: int = Query(82, ge=10, le=95),
     scale: float = Query(1.0, ge=0.2, le=1.0),
@@ -366,7 +402,7 @@ async def video_stream(
 
 
 @app.get("/api/stream/status")
-async def stream_status():
+def stream_status():
     """Return reader health: frames decoded, last error, transport, uptime."""
     with _reader_lock:
         r = _reader
@@ -385,7 +421,7 @@ async def stream_status():
 
 
 @app.post("/api/stream/restart")
-async def stream_restart(transport: str = Query("tcp", pattern="^(tcp|udp)$")):
+def stream_restart(transport: str = Query("tcp", pattern="^(tcp|udp)$")):
     """Force-stop and restart the RTSP reader (transport change or manual recovery)."""
     global _reader, _current_transport, _stream_start_time
     debuglog.event(f"[reader] manual restart requested (transport={transport})")
@@ -420,49 +456,53 @@ async def api_config():
 
 
 @app.get("/api/online")
-async def api_online():
-    """Ping the goggles. Returns {online: bool} — never raises."""
-    try:
-        return {"online": _get_client().online()}
-    except Exception:
-        return {"online": False}
+def api_online():
+    """Ping the goggles. Returns {online: bool}, or a 409 while a clip transfers."""
+    with _goggles_request() as client:
+        try:
+            return {"online": client.online()}
+        except Exception:
+            return {"online": False}
 
 
 @app.get("/api/info")
-async def api_info():
+def api_info():
     """Device version, serials, HW revision."""
-    try:
-        info = _get_client().get_version()
-        return {
-            "goggles_sn": info.goggles_sn,
-            "goggles_hw": info.goggles_hw,
-            "goggles_sw": info.goggles_sw,
-            "tx_sn": info.tx_sn,
-            "tx_hw": info.tx_hw,
-            "tx_sw": info.tx_sw,
-            "vtx_present": info.vtx_present,
-        }
-    except Exception as exc:
-        raise HTTPException(503, detail=str(exc))
+    with _goggles_request() as client:
+        try:
+            info = client.get_version()
+            return {
+                "goggles_sn": info.goggles_sn,
+                "goggles_hw": info.goggles_hw,
+                "goggles_sw": info.goggles_sw,
+                "tx_sn": info.tx_sn,
+                "tx_hw": info.tx_hw,
+                "tx_sw": info.tx_sw,
+                "vtx_present": info.vtx_present,
+            }
+        except Exception as exc:
+            raise HTTPException(503, detail=str(exc))
 
 
 @app.get("/api/state")
-async def api_state():
+def api_state():
     """One-shot devicestate poll (for REST clients; prefer /ws/telemetry)."""
-    try:
-        return _get_client().get_device_state()
-    except Exception as exc:
-        raise HTTPException(503, detail=str(exc))
+    with _goggles_request() as client:
+        try:
+            return client.get_device_state()
+        except Exception as exc:
+            raise HTTPException(503, detail=str(exc))
 
 
 @app.post("/api/settime")
-async def api_settime():
+def api_settime():
     """Sync the goggles clock to the server's local time."""
-    try:
-        _get_client().set_time()
-        return {"ok": True}
-    except Exception as exc:
-        raise HTTPException(500, detail=str(exc))
+    with _goggles_request() as client:
+        try:
+            client.set_time()
+            return {"ok": True}
+        except Exception as exc:
+            raise HTTPException(500, detail=str(exc))
 
 
 # ── DVR --------------------------------------------------------------------
@@ -477,27 +517,54 @@ async def api_records(start: int = 0, limit: int = 500):
     """
     limit = max(1, min(limit, 5000))  # the goggles hold few clips; huge limits are slow
     loop = asyncio.get_running_loop()
-    _busy_enter()
-    debuglog.event(f"[dvr] records query start (limit={limit})")
-    try:
-        result = await loop.run_in_executor(
-            None, lambda: _get_client().list_records(start, limit, timeout=15.0))
-        debuglog.event(f"[dvr] records query ok ({len(result.get('rows', []))} rows)")
-        return result
-    except Exception as exc:
-        debuglog.event(f"[dvr] records query FAILED: {type(exc).__name__}: {exc}")
-        raise HTTPException(503, detail=str(exc))
-    finally:
-        _busy_exit()
+    with _goggles_request() as client:
+        _busy_enter()
+        debuglog.event(f"[dvr] records query start (limit={limit})")
+        try:
+            result = await loop.run_in_executor(
+                None, lambda: client.list_records(start, limit, timeout=15.0))
+            debuglog.event(f"[dvr] records query ok ({len(result.get('rows', []))} rows)")
+            return result
+        except Exception as exc:
+            debuglog.event(f"[dvr] records query FAILED: {type(exc).__name__}: {exc}")
+            raise HTTPException(503, detail=str(exc))
+        finally:
+            _busy_exit()
 
 
 @app.delete("/api/records/{filename}")
-async def api_delete(filename: str):
-    try:
-        _get_client().delete_record(filename)
-        return {"ok": True}
-    except Exception as exc:
-        raise HTTPException(500, detail=str(exc))
+def api_delete(filename: str):
+    with _goggles_request() as client:
+        try:
+            client.delete_record(filename)
+            return {"ok": True}
+        except Exception as exc:
+            raise HTTPException(500, detail=str(exc))
+
+
+def _end_transfer(conn_lock) -> None:
+    conn_lock.release()
+    _transfer_lock.release()
+    _busy_exit()
+
+
+class _UpstreamResponse(StreamingResponse):
+    """Streams a goggles response, then closes it and ends the transfer as
+    soon as the browser is done or gone. When the browser disconnects (cancelled
+    download, closed player) Starlette abandons the body iterator, so cleanup in
+    the generator would wait for garbage collection (~50 s measured)."""
+
+    def __init__(self, upstream, conn_lock, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._upstream = upstream
+        self._conn_lock = conn_lock
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._upstream.close()
+            _end_transfer(self._conn_lock)
 
 
 @app.get("/api/records/{filename}/download")
@@ -513,26 +580,42 @@ async def api_download(filename: str, inline: bool = False):
     unreachable goggles yields a clean 502 (not a truncated 200), and the
     goggles stay flagged busy for the whole transfer so telemetry polling
     doesn't compete with it on the device's tiny HTTP server.
+
+    Only one transfer at a time: another one is refused with a 409. The
+    transfer also holds the control client's connection lock, so no command or
+    query reaches the goggles while the clip is being read (CONSTRAINT-001).
     """
     url = p.record_url(filename, _goggles_host)
+    conn_lock = _get_client()._conn_lock
     loop = asyncio.get_running_loop()
-    _busy_enter()
+
+    def _open():
+        # The batch download asks for the next clip as soon as the previous body
+        # ends, which can be a moment before that response's cleanup has run.
+        if not _transfer_lock.acquire(timeout=1.0):
+            raise HTTPException(409, detail=_TRANSFER_BUSY)
+        _busy_enter()
+        with _requests_done:
+            _requests_done.wait_for(lambda: _requests == 0)
+        conn_lock.acquire()  # waits out an in-flight telemetry poll
+        try:
+            return urllib.request.urlopen(url, timeout=120)
+        except Exception:
+            _end_transfer(conn_lock)
+            raise
+
     try:
-        resp = await loop.run_in_executor(
-            None, lambda: urllib.request.urlopen(url, timeout=120))
+        resp = await loop.run_in_executor(None, _open)
+    except HTTPException:
+        raise
     except Exception as exc:
-        _busy_exit()
         debuglog.event(f"[dvr] download open FAILED {filename}: "
                        f"{type(exc).__name__}: {exc}")
         raise HTTPException(502, detail=f"goggles did not serve {filename}: {exc}")
 
     def _generate():
-        try:
-            with resp:
-                while chunk := resp.read(1 << 16):
-                    yield chunk
-        finally:
-            _busy_exit()
+        while chunk := resp.read(1 << 16):
+            yield chunk
 
     disposition = "inline" if inline else "attachment"
     safe_filename = filename.replace('"', '').replace('\n', '').replace('\r', '')
@@ -541,14 +624,16 @@ async def api_download(filename: str, inline: bool = False):
     length = resp.headers.get("Content-Length")
     if length:
         headers["Content-Length"] = length
-    return StreamingResponse(_generate(), media_type="video/mp4", headers=headers)
+    return _UpstreamResponse(resp, conn_lock, _generate(), media_type="video/mp4",
+                             headers=headers)
 
 
 # ── Telemetry WebSocket ----------------------------------------------------
 
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(ws: WebSocket):
-    """Push devicestate JSON every 500 ms. Sends {type, data} or {type, message}.
+    """Push devicestate JSON every 500 ms. Sends {type, data} or {type, message},
+    and {type: "busy", busy} when a DVR list or clip transfer starts or ends.
 
     Also doubles as the liveness signal for auto-shutdown: while a browser tab is
     open it holds this socket; when it closes, the client count drops and the app
@@ -560,17 +645,33 @@ async def ws_telemetry(ws: WebSocket):
     client = _get_client()
     loop = asyncio.get_running_loop()
     err_streak = 0
+    was_busy = False
     try:
         while True:
             # Yield to a heavy DVR query/download so we don't pile concurrent
             # requests onto the goggles' tiny HTTP server (gallery timeouts).
-            if _busy():
+            busy = _busy()
+            if busy != was_busy:
+                await ws.send_json({"type": "busy", "busy": busy})
+                was_busy = busy
+            if busy:
                 await asyncio.sleep(0.3)
                 continue
+            # Only the poll is guarded: a failed send means the tab is gone and
+            # must end the loop.
             try:
                 # Short timeout so a slow/booting goggles doesn't stall polling.
                 state = await loop.run_in_executor(
                     None, lambda: client.get_device_state(timeout=2.0))
+            except Exception as exc:
+                # Transient poll error: hold the last state (don't flap the UI).
+                # Only report a real outage after several consecutive failures.
+                err_streak += 1
+                debuglog.event(f"[ws] telemetry poll error #{err_streak}: "
+                               f"{type(exc).__name__}: {exc}")
+                if err_streak >= 6:
+                    await ws.send_json({"type": "error", "message": str(exc)})
+            else:
                 err_streak = 0
                 raw = bool(state.get("vtx_connect"))
                 # Debounce the link state (ignore single-poll blips).
@@ -591,14 +692,6 @@ async def ws_telemetry(ws: WebSocket):
                 # Send the DEBOUNCED link state so the UI never flaps on a blip.
                 state["vtx_connect"] = 1 if _vtx_stable else 0
                 await ws.send_json({"type": "state", "data": state})
-            except Exception as exc:
-                # Transient poll error: hold the last state (don't flap the UI).
-                # Only report a real outage after several consecutive failures.
-                err_streak += 1
-                debuglog.event(f"[ws] telemetry poll error #{err_streak}: "
-                               f"{type(exc).__name__}: {exc}")
-                if err_streak >= 6:
-                    await ws.send_json({"type": "error", "message": str(exc)})
             await asyncio.sleep(0.5)
     except (WebSocketDisconnect, Exception):
         pass
