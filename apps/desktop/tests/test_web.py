@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import time
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import numpy as np
 import pytest
+import uvicorn
+import websockets.sync.client
 from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
@@ -116,6 +121,132 @@ def client():
     return TestClient(srv.app)
 
 
+class _FakeGogglesHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *a):
+        pass
+
+    def _enter(self, name):
+        g = self.server
+        with g.lock:
+            g.inflight += 1
+            g.max_inflight = max(g.max_inflight, g.inflight)
+            g.seen.append(name)
+            g.arrived.set()
+
+    def _exit(self):
+        with self.server.lock:
+            self.server.inflight -= 1
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
+        cmd = json.loads(body.split("=", 1)[1])
+        group = next(iter(cmd))
+        name = next(iter(cmd[group])) if group in ("SysQuery", "SysCtrl") else group
+        self._enter(name)
+        try:
+            time.sleep(self.server.delay.get(name, 0.0))
+            if name == "query_record":
+                reply = FAKE_RECORDS
+            else:
+                reply = {"nRetVal": 0, "stValue": {"version": FAKE_VERSION["stValue"],
+                                                   "devicestate": FAKE_STATE,
+                                                   "onlinequery": {"online": 1}}.get(name, {})}
+            out = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+        finally:
+            self._exit()
+
+    def do_GET(self):
+        """A DVR clip, sent slowly so a test can cancel it mid-transfer."""
+        self._enter("download")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(self.server.clip_size))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            for _ in range(self.server.clip_size // 1000):
+                self.wfile.write(b"x" * 1000)
+                time.sleep(0.002)
+            self.close_connection = True
+        except OSError:
+            pass  # the app hung up on us
+        finally:
+            self._exit()
+
+
+class _FakeGoggles(ThreadingHTTPServer):
+    """Stand-in for the goggles' HTTP server that records how many requests it
+    is serving at the same time (CONSTRAINT-001: it must never be more than 1)."""
+    daemon_threads = True
+
+    def __init__(self):
+        super().__init__(("127.0.0.1", 0), _FakeGogglesHandler)
+        self.lock = threading.Lock()
+        self.inflight = 0
+        self.max_inflight = 0
+        self.seen: list[str] = []
+        self.arrived = threading.Event()
+        self.delay: dict[str, float] = {}
+        self.clip_size = 4_000_000
+
+    @property
+    def addr(self) -> str:
+        return "%s:%d" % self.server_address
+
+
+@pytest.fixture
+def goggles():
+    g = _FakeGoggles()
+    threading.Thread(target=g.serve_forever, daemon=True).start()
+    yield g
+    g.shutdown()
+    g.server_close()
+
+
+@pytest.fixture
+def live(goggles):
+    """The real app on uvicorn with a real WSClient pointed at the fake goggles.
+    TestClient can't show these bugs: it gives each request its own event loop
+    and cancels the WebSocket handler when the client closes."""
+    srv._client = None
+    srv._goggles_host = goggles.addr
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    server = uvicorn.Server(uvicorn.Config(srv.app, log_level="error"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not server.started and time.monotonic() < deadline:
+        time.sleep(0.01)
+    yield "http://%s:%d" % sock.getsockname()
+    server.should_exit = True
+    thread.join(5)
+
+
+def _http(url, method="GET", timeout=10):
+    with urllib.request.urlopen(urllib.request.Request(url, method=method), timeout=timeout) as r:
+        return r.status, r.read()
+
+
+def _timed_get(url):
+    t0 = time.monotonic()
+    _http(url)
+    return time.monotonic() - t0
+
+
+def _wait_for(cond, timeout=3.0):
+    deadline = time.monotonic() + timeout
+    while not cond() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return cond()
+
+
 # ═══════════════════════════════════════════════════════════════
 #  API endpoint tests
 # ═══════════════════════════════════════════════════════════════
@@ -208,6 +339,16 @@ class TestRecords:
         r = client.get("/api/records")
         assert r.status_code == 503
 
+    def test_query_marks_goggles_busy_while_it_runs(self, client, _mock_goggles):
+        """Telemetry yields to the heavy records query (CONSTRAINT-001)."""
+        fake_client, _ = _mock_goggles
+        busy_during = []
+        fake_client.list_records.side_effect = (
+            lambda *a, **k: busy_during.append(srv._busy()) or FAKE_RECORDS)
+        assert client.get("/api/records").status_code == 200
+        assert busy_during == [True]
+        assert not srv._busy()
+
 
 class TestDeleteRecord:
     def test_delete_ok(self, client, _mock_goggles):
@@ -234,6 +375,7 @@ class TestDownloadRecord:
                 self.headers = dict(headers or {})
             def __enter__(self): return self
             def __exit__(self, *a): return False
+            def close(self): pass
             def read(self, n):
                 if self._sent:
                     return b""
@@ -556,6 +698,109 @@ class TestWebSocketTelemetry:
             assert msg["type"] == "error"
             assert "connection refused" in msg["message"]
 
+    def test_polling_waits_while_goggles_busy(self, client, _mock_goggles):
+        fake_client, _ = _mock_goggles
+        srv._busy_enter()
+        with client.websocket_connect("/ws/telemetry") as ws:
+            time.sleep(1.0)
+            assert fake_client.get_device_state.call_count == 0
+            srv._busy_exit()
+            assert ws.receive_json()["type"] == "state"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Real server against fake goggles: event loop, busy flag, CONSTRAINT-001
+# ═══════════════════════════════════════════════════════════════
+
+class TestLiveServer:
+    @pytest.mark.parametrize("method, path, cmd", [
+        ("GET", "/api/online", "onlinequery"),
+        ("GET", "/api/info", "version"),
+        ("GET", "/api/state", "devicestate"),
+        ("POST", "/api/settime", "settime"),
+        ("DELETE", "/api/records/AvatarG0001.mp4", "deletegasrecord"),
+    ])
+    def test_slow_goggles_call_does_not_freeze_the_server(self, live, goggles, method, path, cmd):
+        goggles.delay[cmd] = 1.0
+        slow = threading.Thread(target=_http, args=(live + path, method))
+        slow.start()
+        assert goggles.arrived.wait(3)
+        took = _timed_get(live + "/api/config")
+        slow.join()
+        assert goggles.seen == [cmd]
+        assert took < 0.5
+
+    @pytest.mark.parametrize("path", ["/api/stream/restart?transport=udp",
+                                      "/video/stream?transport=udp"])
+    def test_stopping_the_reader_does_not_freeze_the_server(self, live, _mock_goggles, path):
+        """Stopping a reader stuck in an RTSP connect waits up to 2 s for its thread."""
+        _, old_reader = _mock_goggles
+        stopping = threading.Event()
+        old_reader.stop.side_effect = lambda: (stopping.set(), time.sleep(1.0))
+        responses = []
+        method = "POST" if "restart" in path else "GET"
+        opener = threading.Thread(target=lambda: responses.append(urllib.request.urlopen(
+            urllib.request.Request(live + path, method=method), timeout=10)))
+        statuses = []
+        status = threading.Thread(target=lambda: statuses.append(
+            json.loads(_http(live + "/api/stream/status")[1])))
+        with patch.object(srv, "LatestFrameReader", return_value=_make_fake_reader()):
+            opener.start()
+            assert stopping.wait(3)
+            status.start()  # waits for the reader swap, but off the event loop
+            time.sleep(0.1)
+            took = _timed_get(live + "/api/config")
+            opener.join()
+            status.join()
+        responses[0].close()
+        assert responses[0].status == 200
+        assert took < 0.5
+        assert statuses[0]["transport"] == "udp"
+
+    def test_goggles_never_see_two_requests_at_once(self, live, goggles):
+        """Routes run in worker threads; only WSClient's connection lock keeps
+        telemetry, info, settime, records and state from overlapping on the
+        goggles (CONSTRAINT-001)."""
+        for name in ("devicestate", "version", "settime", "query_record"):
+            goggles.delay[name] = 0.15
+        calls = [("GET", "/api/info"), ("POST", "/api/settime"), ("GET", "/api/records"),
+                 ("GET", "/api/state"), ("GET", "/api/online")] * 2
+        start = threading.Barrier(len(calls))
+        statuses = []
+
+        def call(method, path):
+            start.wait()
+            statuses.append(_http(live + path, method)[0])
+
+        ws_url = live.replace("http://", "ws://") + "/ws/telemetry"
+        with websockets.sync.client.connect(ws_url) as ws:
+            json.loads(ws.recv(timeout=3))
+            threads = [threading.Thread(target=call, args=c) for c in calls]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(15)
+            json.loads(ws.recv(timeout=3))
+        assert goggles.max_inflight == 1
+        assert statuses == [200] * len(calls)
+        assert {"devicestate", "version", "settime", "query_record", "onlinequery"} <= set(goggles.seen)
+
+    def test_cancelled_download_frees_the_goggles_at_once(self, live, goggles):
+        resp = urllib.request.urlopen(live + "/api/records/AvatarG0001.mp4/download", timeout=10)
+        resp.read(200_000)
+        assert srv._busy()
+        resp.close()
+        assert _wait_for(lambda: not srv._busy() and goggles.inflight == 0, timeout=3)
+
+    def test_closing_the_tab_stops_telemetry_polling(self, live, goggles):
+        ws_url = live.replace("http://", "ws://") + "/ws/telemetry"
+        with websockets.sync.client.connect(ws_url) as ws:
+            assert json.loads(ws.recv(timeout=3))["type"] == "state"
+        assert _wait_for(lambda: srv._active_clients == 0)
+        polls = goggles.seen.count("devicestate")
+        time.sleep(1.5)
+        assert goggles.seen.count("devicestate") == polls
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Origin guard (DNS rebinding / cross-site requests)
@@ -693,6 +938,21 @@ class TestHelpers:
         p1 = srv._make_placeholder("A", "", 50, 320, 180)
         p2 = srv._make_placeholder("B", "", 50, 320, 180)
         assert p1 is not p2
+
+    def test_racing_first_requests_share_one_client(self, monkeypatch):
+        """A second WSClient would be a second connection to the goggles, outside
+        the first one's lock (CONSTRAINT-001)."""
+        srv._client = None
+        monkeypatch.setattr(srv, "WSClient", lambda *a, **k: time.sleep(0.1) or object())
+        got = []
+        threads = [threading.Thread(target=lambda: got.append(srv._get_client()))
+                   for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(got) == 4
+        assert len({id(c) for c in got}) == 1
 
     def test_get_or_start_reader_transport_switch(self):
         """Switching transport stops the old reader and creates a new one."""
