@@ -1,5 +1,6 @@
 // Tests for the DVR gallery against a loopback stand-in for the goggles' HTTP
 // server, which records how many requests it is serving at once.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -25,6 +26,7 @@ class _Goggles {
   final bool sendLength;
   final Duration listDelay;
   final int clipBytes;
+  final Duration answerDelay; // before the goggles answer a clip GET
   int heads = 0;
   int headsDuringDownload = 0;
   int inFlight = 0;
@@ -38,6 +40,7 @@ class _Goggles {
     this.sendLength = true,
     this.listDelay = Duration.zero,
     this.clipBytes = 64 * 1024,
+    this.answerDelay = Duration.zero,
   });
 
   int get port => _server.port;
@@ -58,13 +61,28 @@ class _Goggles {
         } else if (req.method == 'GET') {
           downloading = true;
           gets.add(req.uri.path);
-          req.response.headers.contentLength = clipBytes;
-          for (var sent = 0; sent < clipBytes; sent += 8 * 1024) {
-            req.response.add(List.filled(8 * 1024, 0));
-            await req.response.flush();
+          // On the raw socket a client that hangs up ends the request at once;
+          // HttpServer would only notice on its next write.
+          final socket = await req.response.detachSocket(writeHeaders: false);
+          var open = true;
+          socket.listen(null,
+              onDone: () => open = false, onError: (_) => open = false);
+          for (var t = Duration.zero; open && t < answerDelay;
+              t += const Duration(milliseconds: 20)) {
+            await Future.delayed(const Duration(milliseconds: 20));
+          }
+          if (open) {
+            socket.write('HTTP/1.1 200 OK\r\n'
+                'Content-Length: $clipBytes\r\nConnection: close\r\n\r\n');
+          }
+          for (var sent = 0; open && sent < clipBytes; sent += 8 * 1024) {
+            socket.add(List.filled(8 * 1024, 0));
+            await socket.flush();
             await Future.delayed(const Duration(milliseconds: 40));
           }
+          socket.destroy();
           downloading = false;
+          return;
         } else {
           lists++;
           await utf8.decodeStream(req);
@@ -211,6 +229,64 @@ void main() {
     await _close(tester, g, goggles);
     tmp.deleteSync(recursive: true);
   });
+
+  for (final beforeRequest in [false, true]) {
+    testWidgets(
+        'cancelling a clip before '
+        '${beforeRequest ? 'its request goes out' : 'the goggles answer'} '
+        'drops it and the batch goes on', (tester) async {
+      final tmp = Directory.systemTemp.createTempSync('gallery_test');
+      final firstDir = Completer<void>(); // holds the first clip before its GET
+      if (!beforeRequest) firstDir.complete();
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async {
+        await firstDir.future;
+        return tmp.path;
+      });
+      final saved = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel('gal'), (call) async {
+        if (call.method != 'putVideo') return true; // access checks
+        saved.add((call.arguments['path'] as String).split('/').last);
+        return null;
+      });
+      final goggles =
+          _Goggles(answerDelay: const Duration(milliseconds: 1500));
+      final g = await _openGallery(tester, goggles, clips: 3);
+      await _runFor(tester, const Duration(milliseconds: 300));
+
+      await tester.tap(find.byIcon(Icons.checklist));
+      await tester.pump();
+      await tester.tap(find.text('AvatarG0001.mp4'));
+      await tester.tap(find.text('AvatarG0002.mp4'));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.download)); // Download Selected
+      for (var i = 0; i < 20 && goggles.gets.isEmpty; i++) {
+        await _runFor(tester, const Duration(milliseconds: 100));
+      }
+      expect(goggles.gets, [if (!beforeRequest) '/record/AvatarG0001.mp4']);
+      final rowDownload =
+          find.widgetWithIcon(IconButton, Icons.download).last;
+      await tester.tap(find.byIcon(Icons.close)); // AvatarG0001.mp4
+      await tester.pump();
+      expect(tester.widget<IconButton>(rowDownload).onPressed, isNull,
+          reason: 'the slot stays taken until the request has really stopped');
+      if (!firstDir.isCompleted) firstDir.complete();
+      await _runFor(tester, const Duration(milliseconds: 200));
+      await tester.tap(rowDownload, warnIfMissed: false); // AvatarG0003.mp4
+      await _runFor(tester, const Duration(seconds: 4));
+
+      expect(goggles.maxInFlight, 1);
+      expect(goggles.gets, [
+        if (!beforeRequest) '/record/AvatarG0001.mp4',
+        '/record/AvatarG0002.mp4',
+      ]);
+      expect(saved, ['AvatarG0002.mp4']);
+      await _close(tester, g, goggles);
+      tmp.deleteSync(recursive: true);
+    });
+  }
 
   testWidgets('leaving the gallery while the list loads does not throw',
       (tester) async {

@@ -47,6 +47,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
   // Completers resolved when a download fully finishes (done/error/cancel),
   // so batch downloads can await true completion, one clip at a time.
   final Map<String, Completer<void>> _downloadDone = {};
+  // One client per download: closing it aborts the transfer at any stage, even
+  // before the goggles answer, and drops the connection.
+  final Map<String, http.Client> _downloadClients = {};
 
   // Clip sizes come from one HEAD per file, sent one at a time and never during
   // a download: the goggles' HTTP server chokes on concurrent requests.
@@ -71,6 +74,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
     // Cancel all active downloads on exit.
     for (final sub in _downloadSubs.values) {
       sub.cancel();
+    }
+    for (final client in _downloadClients.values) {
+      client.close();
     }
     // Release anything awaiting a download so batch loops don't hang.
     for (final done in _downloadDone.values) {
@@ -167,6 +173,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
     final api = context.read<GogglesState>().api;
     final url = api.recordUrl(filename);
     final done = Completer<void>();
+    final client = http.Client();
+    _downloadClients[filename] = client;
 
     setState(() => _downloading[filename] = 0.0);
 
@@ -178,7 +186,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
       final request = http.Request('GET', Uri.parse(url));
       final streamedResponse =
-          await request.send().timeout(const Duration(minutes: 10));
+          await client.send(request).timeout(const Duration(minutes: 10));
 
       final totalBytes = streamedResponse.contentLength ?? 0;
       int receivedBytes = 0;
@@ -262,23 +270,32 @@ class _GalleryScreenState extends State<GalleryScreen> {
           _downloading.remove(filename);
           _downloadSubs.remove(filename);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download failed: $e'),
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
+        if (_downloadClients.containsKey(filename)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Download failed: $e'),
+              backgroundColor: Colors.red.shade800,
+            ),
+          );
+        }
       }
       if (!done.isCompleted) done.complete();
+    } finally {
+      _downloadClients.remove(filename)?.close();
     }
   }
 
   void _cancelDownload(String filename) {
     _downloadSubs[filename]?.cancel();
     _downloadSubs.remove(filename);
+    _downloadClients.remove(filename)?.close();
     final done = _downloadDone.remove(filename);
-    if (done != null && !done.isCompleted) done.complete();
-    setState(() => _downloading.remove(filename));
+    // Before the goggles answer there is no completer yet: the aborted request
+    // fails in _downloadFile, which frees the slot once it has really stopped.
+    if (done != null && !done.isCompleted) {
+      done.complete();
+      setState(() => _downloading.remove(filename));
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Cancelled $filename'),
