@@ -17,7 +17,7 @@ graph LR
     end
 
     subgraph "Python Backend (FastAPI)"
-        CLI["walksnail CLI"]
+        CLI["ws CLI"]
         PROTO["protocol.py<br>Wire format"]
         CLIENT["client.py<br>HTTP client"]
         VIDEO["video.py<br>LatestFrameReader"]
@@ -55,7 +55,7 @@ apps/desktop/
 │   ├── protocol.py                   # Wire format (pure, sin I/O)
 │   ├── client.py                     # HTTP control client (stdlib only)
 │   ├── video.py                      # RTSP decode + LatestFrameReader
-│   ├── cli.py                        # CLI: walksnail <command>
+│   ├── cli.py                        # CLI: ws <command>
 │   └── web/
 │       ├── __init__.py
 │       ├── server.py                 # FastAPI backend
@@ -290,7 +290,7 @@ Aplicación single-page con diseño dark premium. ~1160 líneas (HTML + CSS + JS
 ### 6. `cli.py` — CLI
 [cli.py](ws_client/cli.py)
 
-CLI completo: `walksnail <command> [options]`
+CLI completo: `ws <command> [options]`
 
 | Comando | Descripción |
 |---|---|
@@ -312,6 +312,7 @@ CLI completo: `walksnail <command> [options]`
 ## Tests (sin hardware)
 
 ```bash
+pip install -e ".[web,dev]"
 python -m pytest tests/ -q     # 86 tests, ~10s
 ```
 

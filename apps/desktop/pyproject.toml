@@ -29,6 +29,11 @@ web = [
     "numpy>=1.24",
     "opencv-python>=4.8",  # JPEG encoding for MJPEG stream
 ]
+# Test suite (on top of "web"). Install with:  pip install -e ".[web,dev]"
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",         # required by fastapi.testclient
+]
 
 [project.scripts]
 ws            = "ws_client.cli:main"
