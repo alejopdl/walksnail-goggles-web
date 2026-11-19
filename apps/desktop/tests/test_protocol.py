@@ -32,6 +32,15 @@ def test_delete_record():
         'szCmd={"SysCtrl":{"deletegasrecord":{"szFileName":"AvatarG0531.mp4"}}}'
 
 
+@pytest.mark.parametrize("name", [
+    "", ".", "..", "../x.mp4", "a/b.mp4", "a b.mp4", "x&szCmd=1", 'x"}', "x%22",
+    "clip\n", "AvatarG\u00e9.mp4",
+])
+def test_delete_record_rejects_names_outside_the_dvr_charset(name):
+    with pytest.raises(ValueError):
+        p.cmd_delete_record(name)
+
+
 def test_control_commands():
     assert p.szcmd(p.CMD_REBOOT) == 'szCmd={"SysCtrl":{"reboot":{}}}'
     assert p.szcmd(p.CMD_UPDATE_REBOOT) == 'szCmd={"SysCtrl":{"updatereboot":{}}}'
