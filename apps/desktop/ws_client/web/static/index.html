@@ -941,6 +941,7 @@ const S = {
   mediaLoading: false,
   mediaBatch: false,      // true while "Download selected" runs
   gogglesBusy: false,     // server says a clip transfer or list query is using the goggles
+  infoAfterBusy: false,   // /api/info was refused during a clip transfer: ask again after it
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -1237,6 +1238,7 @@ function connectWS() {
       } else if (msg.type === 'busy') {
         S.gogglesBusy = msg.busy;
         updateMediaSelectionUI();
+        if (!msg.busy && S.infoAfterBusy) fetchDeviceInfo();
       }
     } catch {}
   };
@@ -1433,6 +1435,7 @@ async function fetchConfig() {
 async function fetchDeviceInfo() {
   try {
     const r = await fetch('/api/info');
+    S.infoAfterBusy = r.status === 409;
     if (!r.ok) return;
     const d = await r.json();
     document.getElementById('hdr-gsn').textContent = d.goggles_sn || '–';

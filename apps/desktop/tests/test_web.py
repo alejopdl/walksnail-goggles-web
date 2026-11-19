@@ -802,15 +802,14 @@ class TestLiveServer:
     def test_one_clip_transfer_at_a_time(self, live, goggles):
         """While a clip transfers, another download, the inline player, the list
         and commands never reach the goggles (CONSTRAINT-001): they are refused
-        with a reason, and queries wait for the transfer to end."""
+        with a reason."""
         goggles.clip_size = 1_000_000  # 2 s: outlasts the 1 s a download waits for its turn
         dl = "/api/records/AvatarG0002.mp4/download"
         first = threading.Thread(target=_http, args=(live + "/api/records/AvatarG0001.mp4/download",))
         first.start()
         assert goggles.arrived.wait(3)
         calls = [("GET", dl), ("GET", dl + "?inline=1"), ("GET", "/api/records"),
-                 ("DELETE", "/api/records/AvatarG0002.mp4"), ("POST", "/api/settime"),
-                 ("GET", "/api/info"), ("GET", "/api/state")]
+                 ("DELETE", "/api/records/AvatarG0002.mp4"), ("POST", "/api/settime")]
         replies = {}
 
         def call(method, path):
@@ -828,13 +827,59 @@ class TestLiveServer:
         assert goggles.max_inflight == 1
         assert {k: v[0] for k, v in replies.items()} == {
             (dl, "GET"): 409, (dl + "?inline=1", "GET"): 409, ("/api/records", "GET"): 409,
-            ("/api/records/AvatarG0002.mp4", "DELETE"): 409, ("/api/settime", "POST"): 409,
-            ("/api/info", "GET"): 200, ("/api/state", "GET"): 200}
+            ("/api/records/AvatarG0002.mp4", "DELETE"): 409, ("/api/settime", "POST"): 409}
         assert json.loads(replies[dl, "GET"][1])["detail"] == (
             "The goggles are busy sending a clip. Wait for it to finish, then try again.")
-        assert goggles.seen[0] == "download"
-        assert sorted(goggles.seen[1:]) == ["devicestate", "version"]
+        assert goggles.seen == ["download"]
         assert _http(live + dl)[0] == 200
+
+    def test_queries_during_a_transfer_stall_neither_it_nor_the_server(self, live, goggles):
+        """A route left waiting for the transfer holds one of the 40 worker
+        threads, and the transfer needs one to read each chunk of the clip."""
+        goggles.clip_size = 2_000_000
+        got = []
+        transfer = threading.Thread(target=lambda: got.append(
+            len(_http(live + "/api/records/AvatarG0001.mp4/download")[1])))
+        transfer.start()
+        assert goggles.arrived.wait(3)
+        statuses = []
+
+        def query(path):
+            try:
+                statuses.append(_http(live + path, timeout=2)[0])
+            except urllib.error.HTTPError as exc:
+                statuses.append(exc.code)
+            except OSError:
+                statuses.append("no answer")
+
+        queries = [threading.Thread(target=query, args=(path,))
+                   for path in ("/api/info", "/api/state", "/api/online") * 15]
+        for t in queries:
+            t.start()
+        for t in queries:
+            t.join(5)
+        took = _timed_get(live + "/api/stream/status")
+        transfer.join(15)
+        assert got == [2_000_000]
+        assert took < 0.5
+        assert statuses == [409] * 45
+        assert goggles.seen == ["download"]
+
+    def test_a_transfer_waits_for_a_query_already_admitted(self, live, goggles):
+        """A query let in just before the transfer goes first, instead of
+        waiting for the whole clip."""
+        goggles.clip_size = 10_000
+        client = srv._get_client()
+        real = client.get_version
+        statuses = []
+        with patch.object(client, "get_version", side_effect=lambda: (time.sleep(0.3), real())[1]):
+            query = threading.Thread(target=lambda: statuses.append(_http(live + "/api/info")[0]))
+            query.start()
+            time.sleep(0.1)  # admitted, not at the goggles yet
+            assert _http(live + "/api/records/AvatarG0001.mp4/download")[0] == 200
+            query.join(10)
+        assert goggles.seen == ["version", "download"]
+        assert statuses == [200]
 
     def test_batch_download_gets_every_clip(self, live, goggles):
         """The batch asks for each clip as soon as the previous body ends, which

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import hashlib
 import os
 import signal
@@ -72,14 +73,31 @@ def _busy_exit() -> None:
 
 
 # Held for a whole clip transfer (download or inline playback). A clip can take
-# minutes, so another transfer, a list or a command is refused rather than queued.
+# minutes, so another transfer, a list, a command or a query is refused rather
+# than queued: each request left waiting holds a worker thread, and the transfer
+# needs one to read every chunk (40 waiting requests froze it).
 _transfer_lock = threading.Lock()
 _TRANSFER_BUSY = "The goggles are busy sending a clip. Wait for it to finish, then try again."
+_requests = 0  # control requests admitted by _goggles_request and not yet done
+_requests_done = threading.Condition()
 
 
-def _refuse_during_transfer() -> None:
-    if _transfer_lock.locked():
-        raise HTTPException(409, detail=_TRANSFER_BUSY)
+@contextlib.contextmanager
+def _goggles_request():
+    """Admit a control request, or refuse it with a 409 while a clip transfers.
+    A transfer starts only once the admitted requests are done, so none of them
+    waits for a clip either."""
+    global _requests
+    with _requests_done:
+        if _transfer_lock.locked():
+            raise HTTPException(409, detail=_TRANSFER_BUSY)
+        _requests += 1
+    try:
+        yield _get_client()
+    finally:
+        with _requests_done:
+            _requests -= 1
+            _requests_done.notify_all()
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -439,49 +457,52 @@ async def api_config():
 
 @app.get("/api/online")
 def api_online():
-    """Ping the goggles. Returns {online: bool} — never raises."""
-    try:
-        return {"online": _get_client().online()}
-    except Exception:
-        return {"online": False}
+    """Ping the goggles. Returns {online: bool}, or a 409 while a clip transfers."""
+    with _goggles_request() as client:
+        try:
+            return {"online": client.online()}
+        except Exception:
+            return {"online": False}
 
 
 @app.get("/api/info")
 def api_info():
     """Device version, serials, HW revision."""
-    try:
-        info = _get_client().get_version()
-        return {
-            "goggles_sn": info.goggles_sn,
-            "goggles_hw": info.goggles_hw,
-            "goggles_sw": info.goggles_sw,
-            "tx_sn": info.tx_sn,
-            "tx_hw": info.tx_hw,
-            "tx_sw": info.tx_sw,
-            "vtx_present": info.vtx_present,
-        }
-    except Exception as exc:
-        raise HTTPException(503, detail=str(exc))
+    with _goggles_request() as client:
+        try:
+            info = client.get_version()
+            return {
+                "goggles_sn": info.goggles_sn,
+                "goggles_hw": info.goggles_hw,
+                "goggles_sw": info.goggles_sw,
+                "tx_sn": info.tx_sn,
+                "tx_hw": info.tx_hw,
+                "tx_sw": info.tx_sw,
+                "vtx_present": info.vtx_present,
+            }
+        except Exception as exc:
+            raise HTTPException(503, detail=str(exc))
 
 
 @app.get("/api/state")
 def api_state():
     """One-shot devicestate poll (for REST clients; prefer /ws/telemetry)."""
-    try:
-        return _get_client().get_device_state()
-    except Exception as exc:
-        raise HTTPException(503, detail=str(exc))
+    with _goggles_request() as client:
+        try:
+            return client.get_device_state()
+        except Exception as exc:
+            raise HTTPException(503, detail=str(exc))
 
 
 @app.post("/api/settime")
 def api_settime():
     """Sync the goggles clock to the server's local time."""
-    _refuse_during_transfer()
-    try:
-        _get_client().set_time()
-        return {"ok": True}
-    except Exception as exc:
-        raise HTTPException(500, detail=str(exc))
+    with _goggles_request() as client:
+        try:
+            client.set_time()
+            return {"ok": True}
+        except Exception as exc:
+            raise HTTPException(500, detail=str(exc))
 
 
 # ── DVR --------------------------------------------------------------------
@@ -494,31 +515,31 @@ async def api_records(start: int = 0, limit: int = 500):
     run it off the event loop, give it a generous timeout, and mark the goggles
     busy so the telemetry loop pauses (no concurrent hammering).
     """
-    _refuse_during_transfer()
     limit = max(1, min(limit, 5000))  # the goggles hold few clips; huge limits are slow
     loop = asyncio.get_running_loop()
-    _busy_enter()
-    debuglog.event(f"[dvr] records query start (limit={limit})")
-    try:
-        result = await loop.run_in_executor(
-            None, lambda: _get_client().list_records(start, limit, timeout=15.0))
-        debuglog.event(f"[dvr] records query ok ({len(result.get('rows', []))} rows)")
-        return result
-    except Exception as exc:
-        debuglog.event(f"[dvr] records query FAILED: {type(exc).__name__}: {exc}")
-        raise HTTPException(503, detail=str(exc))
-    finally:
-        _busy_exit()
+    with _goggles_request() as client:
+        _busy_enter()
+        debuglog.event(f"[dvr] records query start (limit={limit})")
+        try:
+            result = await loop.run_in_executor(
+                None, lambda: client.list_records(start, limit, timeout=15.0))
+            debuglog.event(f"[dvr] records query ok ({len(result.get('rows', []))} rows)")
+            return result
+        except Exception as exc:
+            debuglog.event(f"[dvr] records query FAILED: {type(exc).__name__}: {exc}")
+            raise HTTPException(503, detail=str(exc))
+        finally:
+            _busy_exit()
 
 
 @app.delete("/api/records/{filename}")
 def api_delete(filename: str):
-    _refuse_during_transfer()
-    try:
-        _get_client().delete_record(filename)
-        return {"ok": True}
-    except Exception as exc:
-        raise HTTPException(500, detail=str(exc))
+    with _goggles_request() as client:
+        try:
+            client.delete_record(filename)
+            return {"ok": True}
+        except Exception as exc:
+            raise HTTPException(500, detail=str(exc))
 
 
 def _end_transfer(conn_lock) -> None:
@@ -574,7 +595,9 @@ async def api_download(filename: str, inline: bool = False):
         if not _transfer_lock.acquire(timeout=1.0):
             raise HTTPException(409, detail=_TRANSFER_BUSY)
         _busy_enter()
-        conn_lock.acquire()  # waits out an in-flight poll, list or command
+        with _requests_done:
+            _requests_done.wait_for(lambda: _requests == 0)
+        conn_lock.acquire()  # waits out an in-flight telemetry poll
         try:
             return urllib.request.urlopen(url, timeout=120)
         except Exception:
