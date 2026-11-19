@@ -253,9 +253,10 @@ la tasa de requests). Útil para reportar problemas de conexión. Se guarda en
 
 Para acceder desde otro dispositivo en la misma red (ej. tablet), abrí una terminal y usá:
 ```bash
-ws-web --port 8080    # modo Python directo, sin --bind (expone a la LAN)
+ws-web --port 8080 --bind 0.0.0.0    # modo Python directo; sin --bind solo responde en esta PC
 ```
-Luego en el otro dispositivo: `http://IP-DE-TU-PC:8080`
+Luego en el otro dispositivo: `http://IP-DE-TU-PC:8080` (con la IP; la app rechaza otros nombres).
+Usalo solo en una red de confianza: cualquier equipo de esa red puede usar la app, incluso borrar clips.
 
 ---
 
