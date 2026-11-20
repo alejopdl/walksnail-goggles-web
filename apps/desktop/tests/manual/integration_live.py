@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Full integration test — Walksnail Web Ground Station vs REAL goggles.
+Full integration test — desktop web app vs REAL goggles.
 
 Requires: phone on goggles WiFi, adb tunnel active:
   adb forward tcp:18080 tcp:8080  (phone relays to goggles:80)
 
 Tests every API endpoint against the live hardware and validates
-real responses.
+real responses. Read-only by default: steps that change the goggles
+run only with their flag (see --help).
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -19,15 +21,26 @@ import urllib.error
 HOST = "127.0.0.1:18080"
 BASE = f"http://{HOST}"
 
+parser = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+parser.add_argument("--allow-settime", action="store_true",
+                    help="also set the goggles clock to this computer's time (sent once)")
+ARGS = parser.parse_args()
+
 PASS = 0
 FAIL = 0
+SKIP = 0
 RESULTS = []
 
 
-def test(name: str):
-    """Decorator to register and run a test function."""
+def test(name: str, skip: str = ""):
+    """Decorator to run a test function now, or record it as skipped with a reason."""
     def decorator(fn):
-        global PASS, FAIL
+        global PASS, FAIL, SKIP
+        if skip:
+            RESULTS.append(("⏭️", f"{name}: skipped, {skip}"))
+            SKIP += 1
+            return fn
         try:
             fn()
             RESULTS.append(("✅", name))
@@ -61,12 +74,13 @@ def delete(path: str, timeout: float = 8.0) -> dict:
 #  Pre-flight: test raw goggles connectivity (no web server)
 # ═══════════════════════════════════════════════════════════════
 
-    print("\n" + "="*64)
-    print("  WALKSNAIL INTEGRATION TEST — Live hardware")
-    print(f"  Tunnel: {HOST} → goggles 192.168.42.1:80")
-    print("="*64)
+print("\n" + "="*64)
+print("  INTEGRATION TEST — Live hardware")
+print(f"  Tunnel: {HOST} → goggles 192.168.42.1:80")
+print("  Mode: " + ("sets the goggles clock once" if ARGS.allow_settime else "read-only"))
+print("="*64)
 
-    print("\n── Pre-flight: raw goggles connectivity ──")
+print("\n── Pre-flight: raw goggles connectivity ──")
 
 @test("Raw HTTP: goggles /ajaxcom onlinequery")
 def _():
@@ -86,7 +100,7 @@ def _():
 #  Now test via the Python client library directly
 # ═══════════════════════════════════════════════════════════════
 
-    print("\n── Python client library (direct, no web server) ──")
+print("\n── Python client library (direct, no web server) ──")
 
 from ws_client.client import WSClient
 client = WSClient(HOST, timeout=8.0)
@@ -139,18 +153,13 @@ def _():
     for r in rows[:3]:
         print(f"       {r['szFileName']}  {r['duration']}s")
 
-@test("client.set_time() — sync clock")
-def _():
-    client.set_time()
-    print("    → set_time OK (nRetVal=0)")
-
 
 # ═══════════════════════════════════════════════════════════════
 #  Now start the web server and test API endpoints
 # ═══════════════════════════════════════════════════════════════
 
-    print("\n── Web server API endpoints ──")
-    print("  Starting FastAPI server on :18888 ...")
+print("\n── Web server API endpoints ──")
+print("  Starting FastAPI server on :18888 ...")
 
 import threading
 import uvicorn
@@ -202,7 +211,8 @@ def _():
     print(f"    → vtx_connect={d['vtx_connect']}  gas_voltage={d['gas_voltage']:.2f}V")
     print(f"    → bitrate={d.get('bitrate',0)/1e6:.1f} Mbps  MCS={d.get('u8_mcs')}")
 
-@test("POST /api/settime — sync clock via web server")
+@test("POST /api/settime — sync clock via web server",
+      skip="" if ARGS.allow_settime else "changes the goggles clock (run with --allow-settime)")
 def _():
     d = web_post("/api/settime")
     assert d.get("ok") is True, f"response: {d}"
@@ -234,7 +244,7 @@ def _():
 def _():
     with urllib.request.urlopen(WEB + "/", timeout=5) as r:
         html = r.read().decode()
-    assert "Walksnail Ground Station" in html
+    assert "<title>WS WiFi Stream</title>" in html, "title is not WS WiFi Stream"
     assert 'id="stream-img"' in html
     print(f"    → HTML served ({len(html)} bytes) ✓")
 
@@ -274,7 +284,7 @@ def _():
 # ═══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("\n" + "="*64)
-    print(f"  RESULTS: {PASS} passed, {FAIL} failed")
+    print(f"  RESULTS: {PASS} passed, {FAIL} failed, {SKIP} skipped")
     print("="*64)
     for icon, msg in RESULTS:
         print(f"  {icon} {msg}")
@@ -284,6 +294,6 @@ if __name__ == "__main__":
         print(f"  ⚠️  {FAIL} test(s) FAILED")
         sys.exit(1)
     else:
-        print("  🎉 ALL TESTS PASSED — hardware fully verified!")
+        print("  🎉 ALL RUN TESTS PASSED" + (f" ({SKIP} skipped)" if SKIP else " — hardware fully verified!"))
         sys.exit(0)
 
