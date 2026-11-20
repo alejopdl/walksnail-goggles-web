@@ -52,24 +52,6 @@ def test(name: str, skip: str = ""):
     return decorator
 
 
-def get(path: str, timeout: float = 8.0) -> dict:
-    url = BASE + path
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        return json.loads(r.read())
-
-
-def post(path: str, data: bytes = b"", timeout: float = 8.0) -> dict:
-    req = urllib.request.Request(BASE + path, data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
-
-
-def delete(path: str, timeout: float = 8.0) -> dict:
-    req = urllib.request.Request(BASE + path, method="DELETE")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
-
-
 # ═══════════════════════════════════════════════════════════════
 #  Pre-flight: test raw goggles connectivity (no web server)
 # ═══════════════════════════════════════════════════════════════
