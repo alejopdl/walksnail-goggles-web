@@ -47,6 +47,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
   // Completers resolved when a download fully finishes (done/error/cancel),
   // so batch downloads can await true completion, one clip at a time.
   final Map<String, Completer<void>> _downloadDone = {};
+  // One client per download: closing it aborts the transfer at any stage, even
+  // before the goggles answer, and drops the connection.
+  final Map<String, http.Client> _downloadClients = {};
+
+  // Clip sizes come from one HEAD per file, sent one at a time and never during
+  // a download: the goggles' HTTP server chokes on concurrent requests.
+  final http.Client _http = http.Client();
+  final List<Map<String, dynamic>> _sizeQueue = [];
+  Future<void>? _sizeFetch;
 
   GogglesState? _goggles;
 
@@ -66,11 +75,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
     for (final sub in _downloadSubs.values) {
       sub.cancel();
     }
+    for (final client in _downloadClients.values) {
+      client.close();
+    }
     // Release anything awaiting a download so batch loops don't hang.
     for (final done in _downloadDone.values) {
       if (!done.isCompleted) done.complete();
     }
     _downloadDone.clear();
+    _http.close();
     _goggles?.resumePolling();
     super.dispose();
   }
@@ -78,6 +91,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   // --------------- Data Loading ---------------
 
   Future<void> _loadRecords() async {
+    if (_downloading.isNotEmpty) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -86,15 +100,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
     try {
       final api = context.read<GogglesState>().api;
       final data = await api.listRecords();
+      if (!mounted) return;
       final rows = (data['rows'] as List<dynamic>?) ?? [];
       final records = rows.cast<Map<String, dynamic>>();
 
       // (File sizes and thumbnails will be fetched lazily in the list builder)
+      _sizeQueue.clear();
       setState(() {
         _records = records;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -102,10 +119,30 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  void _queueFileSize(Map<String, dynamic> record) {
+    if (record['_sizeQueued'] != true) {
+      record['_sizeQueued'] = true;
+      _sizeQueue.add(record);
+    }
+    _fetchFileSizes();
+  }
+
+  Future<void> _fetchFileSizes() async {
+    if (_sizeFetch != null) return;
+    final api = context.read<GogglesState>().api;
+    while (mounted && _sizeQueue.isNotEmpty && _downloading.isEmpty) {
+      final record = _sizeQueue.removeAt(0);
+      _sizeFetch = _fetchFileSize(
+          api.recordUrl(record['szFileName']?.toString() ?? ''), record);
+      await _sizeFetch;
+    }
+    _sizeFetch = null;
+  }
+
   Future<void> _fetchFileSize(String url, Map<String, dynamic> record) async {
     try {
       final response =
-          await http.head(Uri.parse(url)).timeout(const Duration(seconds: 5));
+          await _http.head(Uri.parse(url)).timeout(const Duration(seconds: 5));
       final contentLength = response.headers['content-length'];
       if (contentLength != null && mounted) {
         setState(() {
@@ -131,22 +168,25 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// so clips transfer strictly one at a time: the goggles' tiny one-shot HTTP
   /// server chokes on parallel file reads.
   Future<void> _downloadFile(String filename) async {
-    if (_downloading.containsKey(filename)) return; // Already downloading.
+    if (_downloading.isNotEmpty) return; // One transfer at a time, batch or not.
 
     final api = context.read<GogglesState>().api;
     final url = api.recordUrl(filename);
     final done = Completer<void>();
+    final client = http.Client();
+    _downloadClients[filename] = client;
 
     setState(() => _downloading[filename] = 0.0);
 
     try {
+      await _sizeFetch; // let an in-flight size request finish first
       final downloadDir = await _getDownloadDir();
       final filePath = clipTempPath(downloadDir, filename);
       final file = File(filePath);
 
       final request = http.Request('GET', Uri.parse(url));
       final streamedResponse =
-          await request.send().timeout(const Duration(minutes: 10));
+          await client.send(request).timeout(const Duration(minutes: 10));
 
       final totalBytes = streamedResponse.contentLength ?? 0;
       int receivedBytes = 0;
@@ -230,23 +270,32 @@ class _GalleryScreenState extends State<GalleryScreen> {
           _downloading.remove(filename);
           _downloadSubs.remove(filename);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download failed: $e'),
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
+        if (_downloadClients.containsKey(filename)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Download failed: $e'),
+              backgroundColor: Colors.red.shade800,
+            ),
+          );
+        }
       }
       if (!done.isCompleted) done.complete();
+    } finally {
+      _downloadClients.remove(filename)?.close();
     }
   }
 
   void _cancelDownload(String filename) {
     _downloadSubs[filename]?.cancel();
     _downloadSubs.remove(filename);
+    _downloadClients.remove(filename)?.close();
     final done = _downloadDone.remove(filename);
-    if (done != null && !done.isCompleted) done.complete();
-    setState(() => _downloading.remove(filename));
+    // Before the goggles answer there is no completer yet: the aborted request
+    // fails in _downloadFile, which frees the slot once it has really stopped.
+    if (done != null && !done.isCompleted) {
+      done.complete();
+      setState(() => _downloading.remove(filename));
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Cancelled $filename'),
@@ -256,6 +305,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   void _downloadSelected() {
+    if (_downloading.isNotEmpty) return;
     // Strictly sequential: each _downloadFile future completes only when its
     // transfer has fully finished, so clips never download in parallel (the
     // goggles' one-shot HTTP server can't serve concurrent file reads).
@@ -353,6 +403,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   // --------------- Build ---------------
 
+  static const _waitForDownload = 'Wait for the current download to finish';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -404,9 +456,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
             // Download selected.
             IconButton(
-              icon: const Icon(Icons.download, color: Colors.cyanAccent),
-              onPressed: _selected.isEmpty ? null : _downloadSelected,
-              tooltip: 'Download Selected',
+              icon: Icon(Icons.download,
+                  color: _downloading.isEmpty
+                      ? Colors.cyanAccent
+                      : Colors.white24),
+              onPressed: _selected.isEmpty || _downloading.isNotEmpty
+                  ? null
+                  : _downloadSelected,
+              tooltip:
+                  _downloading.isEmpty ? 'Download Selected' : _waitForDownload,
             ),
           ] else ...[
             // Multi-select mode toggle.
@@ -439,9 +497,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
             // Refresh.
             IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.cyanAccent),
-              onPressed: _loadRecords,
-              tooltip: 'Refresh',
+              icon: Icon(Icons.refresh,
+                  color: _downloading.isEmpty
+                      ? Colors.cyanAccent
+                      : Colors.white24),
+              onPressed: _downloading.isEmpty ? _loadRecords : null,
+              tooltip: _downloading.isEmpty ? 'Refresh' : _waitForDownload,
             ),
           ],
         ],
@@ -522,11 +583,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
         final isDownloading = downloadProgress != null;
         final isSelected = _selected.contains(filename);
 
-        // Lazily fetch data if missing
-        if (fileSize == 0 && mounted) {
-          final api = context.read<GogglesState>().api;
-          _fetchFileSize(api.recordUrl(filename), record);
-        }
+        if (fileSize == 0) _queueFileSize(record);
 
         return GestureDetector(
           onLongPress: () {
@@ -670,9 +727,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 ),
                               )
                             : IconButton(
-                                icon: const Icon(Icons.download,
-                                    color: Colors.cyanAccent, size: 22),
-                                onPressed: () => _downloadFile(filename),
+                                icon: Icon(Icons.download,
+                                    color: _downloading.isEmpty
+                                        ? Colors.cyanAccent
+                                        : Colors.white24,
+                                    size: 22),
+                                onPressed: _downloading.isEmpty
+                                    ? () => _downloadFile(filename)
+                                    : null,
+                                tooltip: _downloading.isEmpty
+                                    ? null
+                                    : _waitForDownload,
                               ),
                       ),
                   ],
