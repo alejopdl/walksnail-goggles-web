@@ -1,7 +1,9 @@
 # Manual / live-hardware scripts
 
 These are NOT pytest modules — they run top-to-bottom against real goggles
-(via the adb phone tunnel on `127.0.0.1:18080`) and print a ✅/❌ report.
+(via the adb phone tunnel: `127.0.0.1:18080` for control, `127.0.0.1:18554`
+for RTSP video) and print a ✅/❌ report. The video step passes only if real
+frames are decoded, so the drone must be on.
 Run from `apps/desktop`:
 
     python tests/manual/integration_live.py                   # read-only

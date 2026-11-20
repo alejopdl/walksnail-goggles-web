@@ -3,7 +3,8 @@
 Full integration test — desktop web app vs REAL goggles.
 
 Requires: phone on goggles WiFi, adb tunnel active:
-  adb forward tcp:18080 tcp:8080  (phone relays to goggles:80)
+  127.0.0.1:18080 → goggles:80   (control)
+  127.0.0.1:18554 → goggles:554  (RTSP video; drone on for the video step)
 
 Tests every API endpoint against the live hardware and validates
 real responses. Read-only by default: steps that change the goggles
@@ -19,7 +20,9 @@ import urllib.request
 import urllib.error
 
 HOST = "127.0.0.1:18080"
+RTSP_HOST = "127.0.0.1:18554"
 BASE = f"http://{HOST}"
+VIDEO_WAIT_S = 20.0
 
 parser = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -58,7 +61,7 @@ def test(name: str, skip: str = ""):
 
 print("\n" + "="*64)
 print("  INTEGRATION TEST — Live hardware")
-print(f"  Tunnel: {HOST} → goggles 192.168.42.1:80")
+print(f"  Tunnel: {HOST} → goggles 192.168.42.1:80, {RTSP_HOST} → :554")
 print("  Mode: " + ("sets the goggles clock once" if ARGS.allow_settime else "read-only"))
 print("="*64)
 
@@ -149,6 +152,7 @@ from ws_client.web import server as srv
 
 # Configure the server module to point at the goggles tunnel
 srv._goggles_host = HOST
+srv._rtsp_host = RTSP_HOST
 srv._client = None  # will be lazy-created
 
 # Start uvicorn in a background thread
@@ -230,7 +234,7 @@ def _():
     assert 'id="stream-img"' in html
     print(f"    → HTML served ({len(html)} bytes) ✓")
 
-@test("GET /video/stream — MJPEG stream starts")
+@test("GET /video/stream — live video frames decoded")
 def _():
     req = urllib.request.Request(WEB + "/video/stream?fps=5&quality=50&scale=0.333")
     with urllib.request.urlopen(req, timeout=10) as r:
@@ -240,7 +244,17 @@ def _():
         data = r.read(32768)
     assert b"--frame" in data, "no MJPEG boundary found"
     assert b"\xff\xd8\xff" in data, "no JPEG magic found"
-    print(f"    → MJPEG stream OK ({len(data)} bytes, boundary + JPEG magic found) ✓")
+    # The stream also sends a "waiting for video" placeholder JPEG, so only the
+    # reader's decoded-frame count proves that video arrived.
+    deadline = time.monotonic() + VIDEO_WAIT_S
+    while (st := web_get("/api/stream/status"))["frames_decoded"] == 0:
+        if time.monotonic() > deadline:
+            raise AssertionError(
+                f"no video frames from rtsp://{RTSP_HOST} in {VIDEO_WAIT_S:.0f} s "
+                f"(last error: {st['last_error']}); check the drone is on and "
+                f"the tunnel forwards {RTSP_HOST} to goggles:554")
+        time.sleep(0.5)
+    print(f"    → {st['frames_decoded']} frames decoded from rtsp://{RTSP_HOST} ✓")
 
 
 # ═══════════════════════════════════════════════════════════════
