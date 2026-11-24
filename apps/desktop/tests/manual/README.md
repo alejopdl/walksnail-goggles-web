@@ -1,9 +1,20 @@
 # Manual / live-hardware scripts
 
 These are NOT pytest modules — they run top-to-bottom against real goggles
-(via the adb phone tunnel) and print a ✅/❌ report:
+(via the adb phone tunnel: `127.0.0.1:18080` for control, `127.0.0.1:18554`
+for RTSP video) and print a ✅/❌ report. The video step passes only if real
+frames are decoded, so the drone must be on.
+Run from `apps/desktop`:
 
-    python tests/manual/integration_live.py
+    python tests/manual/integration_live.py                   # read-only
+    python tests/manual/integration_live.py --allow-settime   # also syncs the clock
+
+By default the script only reads from the goggles: it sends no command that
+changes them, and steps that would are reported as skipped.
+
+| Flag | What it adds |
+|---|---|
+| `--allow-settime` | Sets the goggles clock to this computer's time, once, through `POST /api/settime`. Not retried if the reply is lost. |
 
 They live outside pytest's `test_*.py` glob on purpose: importing them
 executes network calls.

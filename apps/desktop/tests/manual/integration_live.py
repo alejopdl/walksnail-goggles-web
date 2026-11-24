@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
-Full integration test — Walksnail Web Ground Station vs REAL goggles.
+Full integration test — desktop web app vs REAL goggles.
 
 Requires: phone on goggles WiFi, adb tunnel active:
-  adb forward tcp:18080 tcp:8080  (phone relays to goggles:80)
+  127.0.0.1:18080 → goggles:80   (control)
+  127.0.0.1:18554 → goggles:554  (RTSP video; drone on for the video step)
 
 Tests every API endpoint against the live hardware and validates
-real responses.
+real responses. Read-only by default: steps that change the goggles
+run only with their flag (see --help).
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -17,17 +20,30 @@ import urllib.request
 import urllib.error
 
 HOST = "127.0.0.1:18080"
+RTSP_HOST = "127.0.0.1:18554"
 BASE = f"http://{HOST}"
+VIDEO_WAIT_S = 20.0
+
+parser = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+parser.add_argument("--allow-settime", action="store_true",
+                    help="also set the goggles clock to this computer's time (sent once)")
+ARGS = parser.parse_args()
 
 PASS = 0
 FAIL = 0
+SKIP = 0
 RESULTS = []
 
 
-def test(name: str):
-    """Decorator to register and run a test function."""
+def test(name: str, skip: str = ""):
+    """Decorator to run a test function now, or record it as skipped with a reason."""
     def decorator(fn):
-        global PASS, FAIL
+        global PASS, FAIL, SKIP
+        if skip:
+            RESULTS.append(("⏭️", f"{name}: skipped, {skip}"))
+            SKIP += 1
+            return fn
         try:
             fn()
             RESULTS.append(("✅", name))
@@ -39,34 +55,17 @@ def test(name: str):
     return decorator
 
 
-def get(path: str, timeout: float = 8.0) -> dict:
-    url = BASE + path
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        return json.loads(r.read())
-
-
-def post(path: str, data: bytes = b"", timeout: float = 8.0) -> dict:
-    req = urllib.request.Request(BASE + path, data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
-
-
-def delete(path: str, timeout: float = 8.0) -> dict:
-    req = urllib.request.Request(BASE + path, method="DELETE")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
-
-
 # ═══════════════════════════════════════════════════════════════
 #  Pre-flight: test raw goggles connectivity (no web server)
 # ═══════════════════════════════════════════════════════════════
 
-    print("\n" + "="*64)
-    print("  WALKSNAIL INTEGRATION TEST — Live hardware")
-    print(f"  Tunnel: {HOST} → goggles 192.168.42.1:80")
-    print("="*64)
+print("\n" + "="*64)
+print("  INTEGRATION TEST — Live hardware")
+print(f"  Tunnel: {HOST} → goggles 192.168.42.1:80, {RTSP_HOST} → :554")
+print("  Mode: " + ("sets the goggles clock once" if ARGS.allow_settime else "read-only"))
+print("="*64)
 
-    print("\n── Pre-flight: raw goggles connectivity ──")
+print("\n── Pre-flight: raw goggles connectivity ──")
 
 @test("Raw HTTP: goggles /ajaxcom onlinequery")
 def _():
@@ -86,7 +85,7 @@ def _():
 #  Now test via the Python client library directly
 # ═══════════════════════════════════════════════════════════════
 
-    print("\n── Python client library (direct, no web server) ──")
+print("\n── Python client library (direct, no web server) ──")
 
 from ws_client.client import WSClient
 client = WSClient(HOST, timeout=8.0)
@@ -139,18 +138,13 @@ def _():
     for r in rows[:3]:
         print(f"       {r['szFileName']}  {r['duration']}s")
 
-@test("client.set_time() — sync clock")
-def _():
-    client.set_time()
-    print("    → set_time OK (nRetVal=0)")
-
 
 # ═══════════════════════════════════════════════════════════════
 #  Now start the web server and test API endpoints
 # ═══════════════════════════════════════════════════════════════
 
-    print("\n── Web server API endpoints ──")
-    print("  Starting FastAPI server on :18888 ...")
+print("\n── Web server API endpoints ──")
+print("  Starting FastAPI server on :18888 ...")
 
 import threading
 import uvicorn
@@ -158,6 +152,7 @@ from ws_client.web import server as srv
 
 # Configure the server module to point at the goggles tunnel
 srv._goggles_host = HOST
+srv._rtsp_host = RTSP_HOST
 srv._client = None  # will be lazy-created
 
 # Start uvicorn in a background thread
@@ -202,7 +197,8 @@ def _():
     print(f"    → vtx_connect={d['vtx_connect']}  gas_voltage={d['gas_voltage']:.2f}V")
     print(f"    → bitrate={d.get('bitrate',0)/1e6:.1f} Mbps  MCS={d.get('u8_mcs')}")
 
-@test("POST /api/settime — sync clock via web server")
+@test("POST /api/settime — sync clock via web server",
+      skip="" if ARGS.allow_settime else "changes the goggles clock (run with --allow-settime)")
 def _():
     d = web_post("/api/settime")
     assert d.get("ok") is True, f"response: {d}"
@@ -234,11 +230,11 @@ def _():
 def _():
     with urllib.request.urlopen(WEB + "/", timeout=5) as r:
         html = r.read().decode()
-    assert "Walksnail Ground Station" in html
+    assert "<title>WS WiFi Stream</title>" in html, "title is not WS WiFi Stream"
     assert 'id="stream-img"' in html
     print(f"    → HTML served ({len(html)} bytes) ✓")
 
-@test("GET /video/stream — MJPEG stream starts")
+@test("GET /video/stream — live video frames decoded")
 def _():
     req = urllib.request.Request(WEB + "/video/stream?fps=5&quality=50&scale=0.333")
     with urllib.request.urlopen(req, timeout=10) as r:
@@ -248,7 +244,17 @@ def _():
         data = r.read(32768)
     assert b"--frame" in data, "no MJPEG boundary found"
     assert b"\xff\xd8\xff" in data, "no JPEG magic found"
-    print(f"    → MJPEG stream OK ({len(data)} bytes, boundary + JPEG magic found) ✓")
+    # The stream also sends a "waiting for video" placeholder JPEG, so only the
+    # reader's decoded-frame count proves that video arrived.
+    deadline = time.monotonic() + VIDEO_WAIT_S
+    while (st := web_get("/api/stream/status"))["frames_decoded"] == 0:
+        if time.monotonic() > deadline:
+            raise AssertionError(
+                f"no video frames from rtsp://{RTSP_HOST} in {VIDEO_WAIT_S:.0f} s "
+                f"(last error: {st['last_error']}); check the drone is on and "
+                f"the tunnel forwards {RTSP_HOST} to goggles:554")
+        time.sleep(0.5)
+    print(f"    → {st['frames_decoded']} frames decoded from rtsp://{RTSP_HOST} ✓")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -274,7 +280,7 @@ def _():
 # ═══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("\n" + "="*64)
-    print(f"  RESULTS: {PASS} passed, {FAIL} failed")
+    print(f"  RESULTS: {PASS} passed, {FAIL} failed, {SKIP} skipped")
     print("="*64)
     for icon, msg in RESULTS:
         print(f"  {icon} {msg}")
@@ -284,6 +290,6 @@ if __name__ == "__main__":
         print(f"  ⚠️  {FAIL} test(s) FAILED")
         sys.exit(1)
     else:
-        print("  🎉 ALL TESTS PASSED — hardware fully verified!")
+        print("  🎉 ALL RUN TESTS PASSED" + (f" ({SKIP} skipped)" if SKIP else " — hardware fully verified!"))
         sys.exit(0)
 
